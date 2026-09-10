@@ -15,11 +15,12 @@ removes email-qa services.
 
 ```text
 HTTPS www.agentstrategy.online -> load balancer -> Apache :80 -> /var/www/tca/aig/dist
-HTTPS api.agentstrategy.online -> load balancer -> Apache :80 -> 127.0.0.1:8002 -> Docker Python :8000
+HTTPS api.agentstrategy.online -> load balancer -> Apache :80 -> 127.0.0.1:18080 -> Docker Python :8000
 ```
 
-The load balancer's port 80 is the Apache listener. Port 8002 is the internal
-Python upstream, chosen separately from email-qa's 8001. The existing Apache
+The load balancer's port 80 is the Apache listener. Port 18080 is AIG's internal
+Python upstream; the original choice of 8002 was already occupied on the server.
+The existing Apache
 vhosts must use the document root and proxy target above; the deployment does
 not overwrite them or change the load balancer. Compare them with
 [the reference vhosts](../config/apache/aig.conf). Keep the production Host
@@ -27,6 +28,15 @@ header when forwarding from the load balancer.
 
 If Apache already uses a different internal Python port, set `PROD_API_BIND`
 in `/var/www/tca/aig/.env.production`, for example `127.0.0.1:8012`, to match it.
+When moving from the old 8002 default, update both `ProxyPass` and
+`ProxyPassReverse` in the existing API vhost to `http://127.0.0.1:18080/`, then
+validate and reload Apache (`sudo apachectl configtest && sudo systemctl reload httpd`
+on this server). If `.env.production` explicitly sets `PROD_API_BIND`, update it
+to `127.0.0.1:18080` or remove that override to use the new default. Confirm 18080
+is available with `sudo ss -ltnp 'sport = :18080'` before redeploying. The workflow
+does not edit Apache configuration. PostgreSQL and Redis use internal container
+ports without host bindings, so they do not need different port numbers.
+
 The repository's `dist` path becomes a symlink to a versioned static release.
 Apache must be allowed to follow that symlink. On an SELinux-enforcing host,
 ensure the checkout's static release directories have an Apache-readable
