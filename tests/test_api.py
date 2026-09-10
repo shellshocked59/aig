@@ -284,7 +284,7 @@ class GameApiTests(unittest.TestCase):
     def test_no_endpoint_accesses_external_services(self):
         forbidden = AssertionError('External services must never be contacted')
         with patch('socket.create_connection', side_effect=forbidden), \
-             patch('httpx.HTTPTransport.handle_request', side_effect=forbidden), \
+             patch('httpx2.HTTPTransport.handle_request', side_effect=forbidden), \
              patch('urllib.request.urlopen', side_effect=forbidden):
             self.start()
             self.client.get('/api/game').raise_for_status()
@@ -419,7 +419,7 @@ class GameApiTests(unittest.TestCase):
     def test_ai_endpoints_never_contact_external_services(self):
         forbidden = AssertionError('No Ollama or external service calls')
         with patch('socket.create_connection', side_effect=forbidden), \
-             patch('httpx.HTTPTransport.handle_request', side_effect=forbidden), \
+             patch('httpx2.HTTPTransport.handle_request', side_effect=forbidden), \
              patch('urllib.request.urlopen', side_effect=forbidden):
             self.post('/demo/ai')
             self.post('/start')

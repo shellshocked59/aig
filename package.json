@@ -6,7 +6,7 @@
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": "^22.13.0 || >=24.0.0"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -14,8 +14,11 @@
     "dev": "node scripts/build.mjs --serve",
     "test": "node --test frontend/tests/*.test.js"
   },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  },
   "devDependencies": {
     "esbuild": "0.28.2",
-    "jsdom": "^26.1.0"
+    "jsdom": "^29.1.1"
   }
 }

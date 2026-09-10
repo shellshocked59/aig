@@ -1,4 +1,4 @@
-name: App CI
+name: App CI and Deploy
 
 on:
   pull_request:
@@ -9,7 +9,8 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Never interrupt an in-flight production deployment with a newer push.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -47,10 +48,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Python package
-        run: python -m pip install -e .
-
-      - name: Install API test dependencies
+      - name: Install Python package and test dependencies
         run: python -m pip install -e ".[test]"
 
       - name: Run Python tests
@@ -60,6 +58,9 @@ jobs:
     name: Docker Stack
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      COMPOSE_FILE: compose.yaml:compose.ci.yaml
+      COMPOSE_PROJECT_NAME: aig-ci
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -69,19 +70,31 @@ jobs:
       - name: Validate Compose configuration
         run: docker compose config --quiet
 
-      - name: Build and start healthy services
+      - name: Build and start images without source mounts
         run: docker compose up --build --wait --wait-timeout 180
+
+      - name: Verify application containers have no mounts
+        run: |
+          for service in api web; do
+            container_id="$(docker compose ps -q "$service")"
+            mount_count="$(docker inspect "$container_id" --format '{{len .Mounts}}')"
+            if [ "$mount_count" != "0" ]; then
+              echo "::error::$service has mounts; CI must test image contents."
+              exit 1
+            fi
+            echo "$service is running entirely from its image."
+          done
 
       - name: Check frontend, API, PostgreSQL, and Redis
         run: docker compose exec -T api python scripts/docker-smoke.py
 
-      - name: Check API port used by host Apache
+      - name: Check published API health endpoint
         run: curl --fail --silent --show-error http://127.0.0.1:8000/api/health
 
-      - name: Test packaged Python application
+      - name: Test Python application from image
         run: docker compose exec -T api python -m unittest discover -s tests -v
 
-      - name: Test packaged frontend
+      - name: Test frontend from image
         run: docker compose exec -T web npm test
 
       - name: Show container logs on failure
@@ -91,3 +104,112 @@ jobs:
       - name: Stop stack and remove disposable CI data
         if: always()
         run: docker compose down --volumes --remove-orphans
+
+  production-checks:
+    name: Production Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COMPOSE_FILE: compose.prod.yaml
+      COMPOSE_PROJECT_NAME: aig-production-ci
+      AIG_RELEASE_SHA: ${{ github.sha }}
+      POSTGRES_PASSWORD: disposable-ci-password
+      PROD_API_BIND: 127.0.0.1:18002
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Validate deployment script
+        run: |
+          bash -n scripts/deploy-remote.sh
+          python3 -m unittest discover -s tests -p test_deploy.py -v
+
+      - name: Build static production frontend
+        run: |
+          docker build --target frontend-export \
+            --build-arg "APP_REVISION=$AIG_RELEASE_SHA" \
+            --output type=local,dest=.local/production-assets .
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          assets = Path('.local/production-assets')
+          assert json.loads((assets / 'release.json').read_text())['revision'] == os.environ['AIG_RELEASE_SHA']
+          assert 'https://api.agentstrategy.online' in (assets / 'assets/main.js').read_text()
+          PY
+
+      - name: Build and start production API and databases
+        run: docker compose up --build --wait --wait-timeout 180
+
+      - name: Check production runtime and service connections
+        run: |
+          container_id="$(docker compose ps -q api)"
+          test "$(docker inspect "$container_id" --format '{{len .Mounts}}')" = 0
+          test "$(docker inspect "$container_id" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$AIG_RELEASE_SHA"
+          docker compose exec -T api python - < scripts/production-smoke.py
+          curl --fail --silent --show-error http://127.0.0.1:18002/api/health
+
+      - name: Show production container logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=150
+
+      - name: Remove disposable production test stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
+  deploy:
+    name: Deploy Production
+    needs: [initial-checks, docker-checks, production-checks]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://www.agentstrategy.online
+    concurrency:
+      group: aig-production-deploy
+      cancel-in-progress: false
+    env:
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/var/www/tca/aig' }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+    steps:
+      - name: Check out tested commit
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Prepare SSH credentials
+        run: |
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_PRIVATE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository secret $name"
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' > "$RUNNER_TEMP/aig-deploy-key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/aig-known-hosts"
+
+      - name: Deploy tested commit to server
+        run: |
+          host_check=accept-new
+          if [ -n "$DEPLOY_KNOWN_HOSTS" ]; then host_check=yes; fi
+          printf -v remote_command 'bash -s -- %q %q' "$DEPLOY_PATH" "$GITHUB_SHA"
+          ssh -i "$RUNNER_TEMP/aig-deploy-key" -p "$DEPLOY_PORT" -l "$DEPLOY_USER" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
+            -o "UserKnownHostsFile=$RUNNER_TEMP/aig-known-hosts" \
+            -o "StrictHostKeyChecking=$host_check" \
+            -- "$DEPLOY_HOST" "$remote_command" < scripts/deploy-remote.sh
+
+      - name: Verify public frontend and API
+        run: python3 scripts/verify-deployment.py "$GITHUB_SHA"
+
+      - name: Remove runner SSH credentials
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/aig-deploy-key" "$RUNNER_TEMP/aig-known-hosts"

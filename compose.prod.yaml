@@ -1,0 +1,65 @@
+# Standalone production stack: Apache serves dist/ and proxies the API port.
+services:
+  api:
+    build:
+      context: .
+      target: api-runtime
+      args:
+        APP_REVISION: ${AIG_RELEASE_SHA:?Set AIG_RELEASE_SHA to the tested commit}
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${PROD_API_BIND:-127.0.0.1:8002}:8000"
+    environment:
+      AIG_HTTP_CORS_ORIGINS: ${AIG_HTTP_CORS_ORIGINS:-https://www.agentstrategy.online}
+      AIG_AI_REPLAN_INTERVAL: ${AIG_AI_REPLAN_INTERVAL:-5}
+      AIG_AI_MAX_ACTIONS: ${AIG_AI_MAX_ACTIONS:-256}
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-aig}
+      PGUSER: ${POSTGRES_USER:-aig}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/api/health', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aig}
+      POSTGRES_USER: ${POSTGRES_USER:-aig}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  redis-data:

@@ -53,7 +53,8 @@ AIG_HTTP_CORS_ORIGINS=https://www.agentstrategy.online
 Configure the production reverse proxy for `api.agentstrategy.online` to send
 requests to Python while retaining their `/api/...` paths. TLS certificates and
 DNS for both domains belong to the deployment setup; these repository settings
-do not provision or publish either domain. The local Apache `Require local`
+do not provision DNS or certificates. The [deployment workflow](deployment.md)
+publishes the application after CI passes. The local Apache `Require local`
 configuration and development Compose file are for local use.
 
 CORS permits explicit frontend origins, GET/POST methods, and JSON Content-Type

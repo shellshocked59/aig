@@ -37,12 +37,16 @@ Prototype 0.0.1 is manually playable in the browser: create/start the fixed two-
 npm ci
 npm run build
 npm test
-python -m pip install -e .
 python -m pip install -e ".[test]"
 python -m unittest discover -s tests -v
 ```
 
-Any failed command fails the job. New runs cancel older runs for the same branch or pull request. No repository secrets, `.env` file, or Ollama service are required. A separate Docker Stack job builds and starts all four services, then checks frontend assets, the API proxy, PostgreSQL, and Redis. Production deployment remains future work.
+Any failed check fails its job. New pull-request runs cancel older runs; main-branch workflows finish without being interrupted during deployment. Test jobs require no repository secrets, `.env` file, or Ollama service. The Docker Stack job removes application source mounts and checks both test suites from the images. Production Images checks the static frontend and production API/database stack. The published API port checks do not run Apache, and browser integration tests remain deferred.
+
+After all checks pass on `main`, the workflow deploys the tested commit over SSH
+to `/var/www/tca/aig` and verifies the public frontend/API release, assets,
+health, and CORS. See [production deployment](docs/deployment.md) for the existing
+SSH secrets, Apache/load-balancer routing, and server prerequisites.
 
 ## Running Locally
 
@@ -63,7 +67,7 @@ For Laragon on Windows, see [the Laragon setup](docs/laragon.md): Apache serves
 See [frontend/API origins](docs/origins.md) for local configuration and the
 production targets `www.agentstrategy.online` / `api.agentstrategy.online`.
 
-Install Python 3.11+ and Node.js 22+. Run these commands from the repository root.
+Install Python 3.11+ and Node.js 24+ (or Node.js 22.13+ on the 22.x line). Run these commands from the repository root.
 
 Windows PowerShell setup (no environment activation required):
 
@@ -92,7 +96,7 @@ use relative URLs by default, with no CORS setup or external asset downloads.
 
 On macOS/Linux, create `.venv` with `python3 -m venv .venv`, then use
 `.venv/bin/python` instead of `.venv\Scripts\python.exe` and `npm` instead of
-`npm.cmd` in the commands above. The `[test]` extra installs HTTPX for API tests;
+`npm.cmd` in the commands above. The `[test]` extra installs HTTPX2 and a compatible Starlette for API tests;
 `pip install -e .` alone installs the runtime application.
 
 `npm run dev` builds and watches JavaScript, CSS, imported PNGs, and HTML. Refresh

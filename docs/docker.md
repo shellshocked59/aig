@@ -131,6 +131,28 @@ docker compose exec -T api python -m unittest discover -s tests -v
 docker compose exec -T api python scripts/docker-smoke.py
 ```
 
+CI combines `compose.yaml` with `compose.ci.yaml` to remove the API and frontend
+source mounts. It checks the actual containers have zero mounts, then runs the
+smoke check and both test suites using only files copied into the images.
+The published API health check tests the Docker port, not Apache or a browser.
+Local development continues to use the source mounts in `compose.yaml`.
+
+To reproduce CI beside your running development stack in PowerShell:
+
+```powershell
+$env:API_BIND = "127.0.0.1:18000"
+$env:WEB_BIND = "127.0.0.1:15173"
+docker compose --env-file .env.example -p aig-ci -f compose.yaml -f compose.ci.yaml up --build --wait
+docker compose --env-file .env.example -p aig-ci -f compose.yaml -f compose.ci.yaml exec -T api python scripts/docker-smoke.py
+docker compose --env-file .env.example -p aig-ci -f compose.yaml -f compose.ci.yaml exec -T api python -m unittest discover -s tests -v
+docker compose --env-file .env.example -p aig-ci -f compose.yaml -f compose.ci.yaml exec -T web npm test
+docker compose --env-file .env.example -p aig-ci -f compose.yaml -f compose.ci.yaml down --volumes
+Remove-Item Env:API_BIND, Env:WEB_BIND
+```
+
+Use a fresh PowerShell terminal for these temporary port overrides. The
+`down --volumes` command deletes only the disposable `aig-ci` database/cache volumes.
+
 The smoke check fetches the page, assets, health endpoint and game endpoint
 through the frontend, then runs PostgreSQL `SELECT 1` and Redis `PING` from
 Python. It does not create/reset a game or modify stored data. CI runs it against
@@ -160,5 +182,6 @@ Run one API replica with one worker until persistence/session isolation exists.
 To intentionally delete all Docker database/cache data, use
 `docker compose down --volumes`. This is a reset, not a routine shutdown.
 
-This stack uses source mounts, a frontend development server, and local database
-credentials. Production packaging and deployment remain separate work.
+This development stack uses source mounts, a frontend development server, and
+local database credentials. Production uses the separate `compose.prod.yaml`
+and runtime/static-export image targets; see [deployment](deployment.md).

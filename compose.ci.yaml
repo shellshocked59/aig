@@ -1,0 +1,7 @@
+# CI must exercise files copied into the images, never the host checkout.
+# Use with: docker compose -f compose.yaml -f compose.ci.yaml ...
+services:
+  api:
+    volumes: !reset []
+  web:
+    volumes: !reset []

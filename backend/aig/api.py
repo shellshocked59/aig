@@ -1,9 +1,10 @@
 """Thin local HTTP boundary. Run with uvicorn aig.api:create_app --factory."""
 
 import logging
+import os
 from typing import Annotated, Literal
 
-from fastapi import Body, FastAPI, Request
+from fastapi import Body, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -64,6 +65,7 @@ CommandPayload = Annotated[
 def create_app() -> FastAPI:
     # Loading settings is explicit at startup, never in the engine or on requests.
     app = FastAPI(title="Aether, Iron & Glory", docs_url=None, redoc_url=None)
+    release_sha = os.environ.get("AIG_RELEASE_SHA", "development")
     app.state.settings = load_settings()
     app.add_middleware(
         CORSMiddleware,
@@ -94,7 +96,8 @@ def create_app() -> FastAPI:
         })
 
     @app.get("/api/health")
-    def health():
+    def health(response: Response):
+        response.headers["X-AIG-Revision"] = release_sha
         return {"status": "ok"}
 
     @app.get("/api/game")
