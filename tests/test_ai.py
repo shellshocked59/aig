@@ -664,6 +664,10 @@ class OrchestrationTests(unittest.TestCase):
              patch("urllib.request.urlopen", side_effect=forbidden):
             first, second = simulate(100), simulate(100)
         self.assertEqual(first, second)
+        self.assertEqual(first["snapshot_sha256"],
+                         "002a14bb4681f14c6715173f6f82cf57d95cfd3d14bf9a86dfd693ece21f472e")
+        self.assertEqual(first["trace_sha256"],
+                         "30d0a56152bb4ab1b279c1aaf8c04480f4af8d721d54ce420bfbe12dfe790a42")
         self.assertEqual((first["turn"], first["activations"]), (100, 200))
         for kind in ("MoveUnit", "AttackUnit", "FoundCity", "SetResearch", "SetCityProduction"):
             self.assertGreater(first["commands"][kind], 0)

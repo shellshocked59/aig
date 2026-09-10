@@ -8,6 +8,14 @@ from aig.state import Technology, UnitType
 PLAN_SCHEMA_VERSION = "strategic-plan-schema-v1"
 
 
+class PlanValidationError(ValueError):
+    """Diagnostic category only; the accepted plan contract is unchanged."""
+
+    def __init__(self, message: str, category: str = "schema_validation"):
+        super().__init__(message)
+        self.category = category
+
+
 def plan_json_schema() -> dict:
     def enum(kind):
         return {"type": "string", "enum": [v.value for v in kind]}
@@ -52,7 +60,11 @@ def strict_json(raw: str) -> object:
 
 def parse_plan(raw: str, state: StrategicState) -> StrategicPlan:
     """Validate wire types, all dataclass rules, and references before execution."""
-    value = strict_json(raw)
+    try:
+        value = strict_json(raw)
+    except (ValueError, RecursionError) as error:
+        reason = str(error) if isinstance(error, ValueError) else "JSON nesting is too deep"
+        raise PlanValidationError(reason, "malformed_json_content") from error
     schema = plan_json_schema()
     if not isinstance(value, dict) or set(value) != set(schema["required"]):
         raise ValueError("Plan must contain exactly the six required schema properties")
@@ -78,11 +90,14 @@ def parse_plan(raw: str, state: StrategicState) -> StrategicPlan:
     enemies = {item["owner_id"] for item in [*state["enemy_cities"], *state["enemy_units"]]}
     if plan.primary_enemy_id is not None and (
             plan.primary_enemy_id == state["player_id"] or plan.primary_enemy_id not in enemies):
-        raise ValueError("primary_enemy_id is not an enemy present in the strategic state")
+        raise PlanValidationError("primary_enemy_id is not an enemy present in the strategic state",
+                                  "invalid_strategic_references")
     if plan.target_city_id is not None:
         city = next((c for c in state["enemy_cities"] if c["id"] == plan.target_city_id), None)
         if city is None:
-            raise ValueError("target_city_id is not an enemy city present in the strategic state")
+            raise PlanValidationError("target_city_id is not an enemy city present in the strategic state",
+                                      "invalid_strategic_references")
         if plan.primary_enemy_id is not None and city["owner_id"] != plan.primary_enemy_id:
-            raise ValueError("target_city_id does not belong to primary_enemy_id")
+            raise PlanValidationError("target_city_id does not belong to primary_enemy_id",
+                                      "invalid_strategic_references")
     return plan

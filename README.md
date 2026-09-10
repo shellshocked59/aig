@@ -42,12 +42,26 @@ python -m pip install -e ".[test]"
 python -m unittest discover -s tests -v
 ```
 
-Any failed command fails the job. New runs cancel older runs for the same branch or pull request. No repository secrets, `.env` file, or Ollama service are required. Production deployment remains future work.
+Any failed command fails the job. New runs cancel older runs for the same branch or pull request. No repository secrets, `.env` file, or Ollama service are required. A separate Docker Stack job builds and starts all four services, then checks frontend assets, the API proxy, PostgreSQL, and Redis. Production deployment remains future work.
 
 ## Running Locally
 
+With Docker Desktop running Linux containers, start the Python API, frontend,
+PostgreSQL, and Redis from the repository root:
+
+```sh
+docker compose up --build --wait
+```
+
+Open **http://127.0.0.1:5173**. No host Python/Node installation or `.env` file is
+required. See [Docker development](docs/docker.md) for configuration, tests,
+database access, and shutdown. Ollama stays external and optional. PostgreSQL
+and Redis are available for development; game persistence is not implemented.
+
 For Laragon on Windows, see [the Laragon setup](docs/laragon.md): Apache serves
-`dist/` at `http://aig.localhost` and forwards API requests to Python.
+`dist/` at `http://aig.localhost` and exposes Python at `http://api.aig.localhost`.
+See [frontend/API origins](docs/origins.md) for local configuration and the
+production targets `www.agentstrategy.online` / `api.agentstrategy.online`.
 
 Install Python 3.11+ and Node.js 22+. Run these commands from the repository root.
 
@@ -73,7 +87,8 @@ npm.cmd run dev
 
 Open **http://127.0.0.1:5173**. Keep both terminals running. Stop with Ctrl+C.
 The development server forwards `/api` to Python on port 8000. Browser requests
-use relative URLs, with no CORS setup or external asset downloads.
+use relative URLs by default, with no CORS setup or external asset downloads.
+`PUBLIC_API_BASE_URL` selects a separate API origin when configured.
 
 On macOS/Linux, create `.venv` with `python3 -m venv .venv`, then use
 `.venv/bin/python` instead of `.venv\Scripts\python.exe` and `npm` instead of
@@ -457,6 +472,28 @@ interval expires or their target becomes invalid. The command limit includes
 `EndActivation`; exceeding it raises a development error rather than hanging.
 Applied commands remain committed if an unexpected AI error occurs. These are
 application controls and do not alter engine rules or snapshot contents.
+
+## Comparative AI benchmarks
+
+Run paired simulations from identical copies of the fixed demo. Each selected
+provider controls both factions in its own run; shared rules and executor stay
+the same. The default is entirely offline:
+
+```powershell
+.venv\Scripts\python.exe -m aig.ai.benchmark --games 2 --turns 100 --output benchmark-results\heuristic
+```
+
+Explicitly opt into a heuristic vs Ollama paired benchmark:
+
+```powershell
+.venv\Scripts\python.exe -m aig.ai.benchmark --provider-a heuristic --provider-b ollama --games 5 --turns 100 --output benchmark-results\qwen-baseline
+```
+
+Reports use `benchmark-v1`: JSON metrics/deltas, canonical hashes, separate
+plan/command/inference traces, fallback accounting, token/context statistics and
+timing. No city capture or victory condition exists, so these measure behavior
+and execution outcomes rather than win rate. Save a baseline before tuning the
+prompt. See [benchmark methodology and metric definitions](docs/benchmarking.md).
 
 ## Roadmap
 

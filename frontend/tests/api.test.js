@@ -40,6 +40,21 @@ test('client preserves structured backend validation and no-game errors', async 
   }
 });
 
+test('client sends reads and JSON commands to the configured API origin', async () => {
+  const calls = [];
+  const api = createGameApi(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({}) };
+  }, 'https://api.agentstrategy.online/');
+  await api.getGame();
+  await api.moveUnit('unit-1', 2, 3);
+  assert.equal(calls[0].url, 'https://api.agentstrategy.online/api/game');
+  assert.equal(calls[0].options.method, 'GET');
+  assert.equal(calls[1].url, 'https://api.agentstrategy.online/api/game/commands');
+  assert.equal(calls[1].options.headers['Content-Type'], 'application/json');
+  assert.deepEqual(JSON.parse(calls[1].options.body), { type: 'move_unit', unitId: 'unit-1', x: 2, y: 3 });
+});
+
 test('client explains connection and non-JSON proxy failures', async () => {
   const offline = createGameApi(async () => { throw new TypeError('fetch failed'); });
   await assert.rejects(offline.getGame, { code: 'connection_error' });

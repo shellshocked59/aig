@@ -10,10 +10,35 @@ from fastapi.testclient import TestClient
 from aig.api import create_app
 from aig.commands import EndActivation, FoundCity, apply_command
 from aig.application import GameSession
-from aig.settings import AiSettings
+from aig.settings import AiSettings, load_settings
 from aig.public_state import public_state
 from aig.snapshots import to_snapshot
 from aig.state import Position, UnitType
+
+
+class CorsApiTests(unittest.TestCase):
+    def test_separate_frontend_origins_allow_reads_errors_and_json_preflight(self):
+        for origin in ('http://aig.localhost', 'https://www.agentstrategy.online'):
+            settings = load_settings(local_file=None, environ={'AIG_HTTP_CORS_ORIGINS': origin})
+            with patch('aig.api.load_settings', return_value=settings), TestClient(create_app()) as client:
+                for path, status in (('/api/health', 200), ('/api/game', 404)):
+                    response = client.get(path, headers={'Origin': origin})
+                    self.assertEqual(response.status_code, status)
+                    self.assertEqual(response.headers['access-control-allow-origin'], origin)
+                response = client.options('/api/game/commands', headers={
+                    'Origin': origin,
+                    'Access-Control-Request-Method': 'POST',
+                    'Access-Control-Request-Headers': 'content-type',
+                })
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers['access-control-allow-origin'], origin)
+                rejected = client.options('/api/game/commands', headers={
+                    'Origin': 'https://unrelated.example',
+                    'Access-Control-Request-Method': 'POST',
+                    'Access-Control-Request-Headers': 'content-type',
+                })
+                self.assertEqual(rejected.status_code, 400)
+                self.assertNotIn('access-control-allow-origin', rejected.headers)
 
 
 class GameApiTests(unittest.TestCase):
@@ -37,6 +62,14 @@ class GameApiTests(unittest.TestCase):
 
     def found(self, unit_id='unit-1', name='New Hope'):
         return self.command('found_city', settlerUnitId=unit_id, name=name)
+
+    def test_health_does_not_require_or_mutate_a_game(self):
+        self.assertEqual(self.client.get('/api/health').json(), {'status': 'ok'})
+        self.assertEqual(self.client.get('/api/game').status_code, 404)
+        self.start()
+        before = self.client.get('/api/game').json()
+        self.assertEqual(self.client.get('/api/health').status_code, 200)
+        self.assertEqual(self.client.get('/api/game').json(), before)
 
     def test_no_game_get_start_and_commands(self):
         responses = [self.client.get('/api/game'),

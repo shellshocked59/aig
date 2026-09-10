@@ -52,6 +52,23 @@ class SettingsTests(unittest.TestCase):
                 with self.subTest(name=name, value=value), self.assertRaisesRegex(ValueError, name):
                     self.load({name: value})
 
+    def test_cors_origins_follow_precedence_and_parse_explicit_origins(self):
+        self.assertEqual(self.load().http.allowed_origins, ('http://aig.localhost',))
+        self.write_local('AIG_HTTP_CORS_ORIGINS=https://www.agentstrategy.online\n')
+        self.assertEqual(self.load().http.allowed_origins, ('https://www.agentstrategy.online',))
+        self.assertEqual(self.load({'AIG_HTTP_CORS_ORIGINS': ''}).http.allowed_origins,
+                         ('https://www.agentstrategy.online',))
+        self.assertEqual(self.load({'AIG_HTTP_CORS_ORIGINS': 'http://aig.localhost, http://127.0.0.1:5173'}).http.allowed_origins,
+                         ('http://aig.localhost', 'http://127.0.0.1:5173'))
+
+    def test_cors_rejects_wildcards_paths_and_malformed_origins(self):
+        for value in ('*', 'https://*.example.com', 'null', 'https://example.com/path',
+                      'https://example.com/', 'https://example.com?query=1',
+                      'https://user:password@example.com', 'file:///tmp',
+                      'http://aig.localhost,', 'http://bad host'):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'AIG_HTTP_CORS_ORIGINS'):
+                self.load({'AIG_HTTP_CORS_ORIGINS': value})
+
     def test_all_fields_follow_precedence_and_empty_environment_fallback(self):
         cases = [
             ("base_url", "http://localhost:11434", "http://other:11434"),

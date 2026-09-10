@@ -1,0 +1,108 @@
+services:
+  web:
+    build:
+      context: .
+      target: web
+    init: true
+    restart: unless-stopped
+    environment:
+      DEV_HOST: 0.0.0.0
+      API_HOST: api
+      API_PORT: "8000"
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}
+    ports:
+      - "${WEB_BIND:-127.0.0.1:5173}:5173"
+    volumes:
+      - ./frontend:/app/frontend:ro
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      target: api
+    init: true
+    restart: unless-stopped
+    # Host Apache uses this address for /api/; Docker web uses api:8000.
+    ports:
+      - "${API_BIND:-127.0.0.1:8000}:8000"
+    environment:
+      # Compose reads the optional root .env; shell values take precedence.
+      # Empty values let Python apply its committed defaults.
+      AIG_OLLAMA_BASE_URL: ${AIG_OLLAMA_BASE_URL:-}
+      AIG_OLLAMA_MODEL: ${AIG_OLLAMA_MODEL:-}
+      AIG_OLLAMA_CONTEXT_SIZE: ${AIG_OLLAMA_CONTEXT_SIZE:-}
+      AIG_OLLAMA_TEMPERATURE: ${AIG_OLLAMA_TEMPERATURE:-}
+      AIG_OLLAMA_SEED: ${AIG_OLLAMA_SEED:-}
+      AIG_OLLAMA_MAX_OUTPUT_TOKENS: ${AIG_OLLAMA_MAX_OUTPUT_TOKENS:-}
+      AIG_OLLAMA_KEEP_ALIVE: ${AIG_OLLAMA_KEEP_ALIVE:-}
+      AIG_OLLAMA_THINK: ${AIG_OLLAMA_THINK:-}
+      AIG_OLLAMA_STREAM: ${AIG_OLLAMA_STREAM:-}
+      AIG_OLLAMA_TIMEOUT_SECONDS: ${AIG_OLLAMA_TIMEOUT_SECONDS:-}
+      AIG_AI_REPLAN_INTERVAL: ${AIG_AI_REPLAN_INTERVAL:-}
+      AIG_AI_MAX_ACTIONS: ${AIG_AI_MAX_ACTIONS:-}
+      AIG_HTTP_CORS_ORIGINS: ${AIG_HTTP_CORS_ORIGINS:-}
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-aig}
+      PGUSER: ${POSTGRES_USER:-aig}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-aig-dev}
+      REDIS_URL: redis://redis:6379/0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./backend:/app/backend:ro
+      - ./tests:/app/tests:ro
+      - ./frontend:/app/frontend:ro
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/api/health', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aig}
+      POSTGRES_USER: ${POSTGRES_USER:-aig}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aig-dev}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  redis-data:

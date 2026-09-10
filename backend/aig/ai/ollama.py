@@ -26,6 +26,17 @@ required by the schema, with all six fields. Do not explain your answer."""
 METRICS = ("prompt_eval_count", "eval_count", "prompt_eval_duration", "eval_duration", "total_duration")
 
 
+def transport_failure_category(error: Exception) -> str:
+    """Preserve transport distinctions without changing retry/fallback policy."""
+    if isinstance(error, HTTPError) or (
+            isinstance(error, StrategyProviderError) and str(error).startswith("Ollama HTTP status")):
+        return "non_2xx"
+    if isinstance(error, TimeoutError) or (
+            isinstance(error, URLError) and isinstance(error.reason, TimeoutError)):
+        return "timeout"
+    return "transport_failure"
+
+
 def post_json(url: str, body: bytes, timeout: float) -> str:
     """Small injectable standard-library transport. No subprocess or new dependency."""
     request = Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
@@ -85,6 +96,7 @@ class OllamaStrategyProvider:
                 raw = self.requester(settings.base_url.rstrip("/") + "/api/chat",
                                      canonical_json(payload).encode("utf-8"), settings.timeout_seconds)
             except (OSError, URLError, HTTPException, UnicodeError, StrategyProviderError) as error:
+                record["error_category"] = transport_failure_category(error)
                 if isinstance(error, HTTPError):
                     reason = f"Ollama HTTP status {error.code}"
                 else:
@@ -94,22 +106,26 @@ class OllamaStrategyProvider:
             finally:
                 record["wall_clock_seconds"] = perf_counter() - started
                 trace["wall_clock_seconds"] += record["wall_clock_seconds"]
+            category = "malformed_ollama_envelope"
             try:
                 response = strict_json(raw)
+                if isinstance(response, dict):
+                    record["metrics"] = {k: response[k] for k in METRICS
+                                         if type(response.get(k)) is int and response[k] >= 0}
                 if not isinstance(response, dict) or not isinstance(response.get("message"), dict):
                     raise ValueError("Ollama response requires message.content")
                 content = response["message"].get("content")
                 if not isinstance(content, str):
                     raise ValueError("Ollama message.content must be a string")
                 record["raw_content"] = content  # Never retain message.thinking.
-                record["metrics"] = {k: response[k] for k in METRICS
-                                     if type(response.get(k)) is int and response[k] >= 0}
                 if response.get("done") is not True or response.get("error"):
                     raise ValueError("Ollama response did not complete successfully")
+                category = "schema_validation"
                 plan = parse_plan(content, state)
             except (ValueError, RecursionError) as error:
                 reason = str(error)[:300] if isinstance(error, ValueError) else "JSON nesting is too deep"
                 record["error"] = reason
+                record["error_category"] = getattr(error, "category", category)
                 if attempt == 1:
                     trace["error"] = reason
                     raise StrategyProviderError(f"Ollama returned two invalid responses: {reason}") from error

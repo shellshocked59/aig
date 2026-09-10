@@ -9,6 +9,7 @@ from dataclasses import dataclass, fields
 import math
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
@@ -46,9 +47,29 @@ class AiSettings:
 
 
 @dataclass(frozen=True)
+class HttpSettings:
+    cors_origins: str = "http://aig.localhost"
+
+    def __post_init__(self) -> None:
+        for origin in self.allowed_origins:
+            parsed = urlsplit(origin)
+            if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                    or parsed.path or parsed.query or parsed.fragment
+                    or parsed.username is not None or parsed.password is not None
+                    or any(character.isspace() for character in origin)
+                    or "*" in origin):
+                raise ValueError("AIG_HTTP_CORS_ORIGINS must list explicit HTTP(S) origins without paths")
+
+    @property
+    def allowed_origins(self) -> tuple[str, ...]:
+        return tuple(origin.strip() for origin in self.cors_origins.split(","))
+
+
+@dataclass(frozen=True)
 class Settings:
     ollama: OllamaSettings = OllamaSettings()
     ai: AiSettings = AiSettings()
+    http: HttpSettings = HttpSettings()
 
 
 # Relative to this checkout, never to the shell's current working directory.
@@ -69,7 +90,7 @@ def load_settings(
     environment = os.environ if environ is None else environ
     local = {} if local_file is None else _read_local_file(local_file)
     groups = {}
-    for group, kind in (("ollama", OllamaSettings), ("ai", AiSettings)):
+    for group, kind in (("ollama", OllamaSettings), ("ai", AiSettings), ("http", HttpSettings)):
         defaults = kind()
         values = {}
         for field in fields(defaults):
@@ -89,6 +110,7 @@ def _read_local_file(path: Path) -> dict[str, str]:
 
     known = {f"AIG_OLLAMA_{field.name.upper()}" for field in fields(OllamaSettings)}
     known |= {f"AIG_AI_{field.name.upper()}" for field in fields(AiSettings)}
+    known |= {f"AIG_HTTP_{field.name.upper()}" for field in fields(HttpSettings)}
     values = {}
     for number, raw_line in enumerate(contents.splitlines(), start=1):
         line = raw_line.strip()

@@ -37,9 +37,12 @@ class AiActionLimitError(RuntimeError):
 
 
 class AiExecutor:
-    def __init__(self, max_actions: int = 256):
+    def __init__(self, max_actions: int = 256, *,
+                 observer: Callable[[str, GameState, Command], None] | None = None):
         _integer(max_actions, "max_actions", minimum=1)
         self.max_actions = max_actions
+        # Optional read-only instrumentation; never part of command selection.
+        self.observer = observer
 
     def execute(self, state: GameState, plan: StrategicPlan) -> AiActivationResult:
         state.validate()
@@ -53,8 +56,12 @@ class AiExecutor:
         def issue(command: Command) -> None:
             if len(executed) >= self.max_actions:
                 raise AiActionLimitError(f"AI {actor} exceeded {self.max_actions} actions on turn {state.turn}")
+            if self.observer is not None:
+                self.observer("before", state, command)
             apply_command(state, command)
             executed.append(command)
+            if self.observer is not None:
+                self.observer("after", state, command)
 
         player = state.players[actor]
         available = available_technologies(player)

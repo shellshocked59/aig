@@ -4,6 +4,7 @@ import logging
 from typing import Annotated, Literal
 
 from fastapi import Body, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, StrictInt
@@ -64,6 +65,12 @@ def create_app() -> FastAPI:
     # Loading settings is explicit at startup, never in the engine or on requests.
     app = FastAPI(title="Aether, Iron & Glory", docs_url=None, redoc_url=None)
     app.state.settings = load_settings()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=app.state.settings.http.allowed_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+    )
     session = GameSession(app.state.settings.ai, ollama_settings=app.state.settings.ollama)
     app.state.session = session
 
@@ -85,6 +92,10 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=500, content={
             "error": "server_error", "message": "Unexpected server error. See the backend log.",
         })
+
+    @app.get("/api/health")
+    def health():
+        return {"status": "ok"}
 
     @app.get("/api/game")
     def get_game():
