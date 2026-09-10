@@ -13,7 +13,9 @@ test('client sends explicit payloads to relative API routes, without actor or al
     ['getGame', [], '', undefined, 'GET'],
     ['createDemoGame', [], '/demo'], ['startGame', [], '/start'],
     ['createAiDemoGame', [], '/demo/ai'],
+    ['createConfiguredAiDemoGame', [], '/demo/configured'],
     ['createLlmDemoGame', [], '/demo/llm'],
+    ['createOpenAiDemoGame', [], '/demo/openai'],
     ['moveUnit', ['u1', 2, 3], '/commands', { type: 'move_unit', unitId: 'u1', x: 2, y: 3 }],
     ['attackUnit', ['u1', 'u2'], '/commands', { type: 'attack_unit', attackerUnitId: 'u1', targetUnitId: 'u2' }],
     ['foundCity', ['u1', 'City'], '/commands', { type: 'found_city', settlerUnitId: 'u1', name: 'City' }],
@@ -34,7 +36,7 @@ test('client sends explicit payloads to relative API routes, without actor or al
 });
 
 test('client preserves structured backend validation and no-game errors', async () => {
-  for (const [status, error] of [[422, 'invalid_command'], [404, 'no_game'], [500, 'server_error']]) {
+  for (const [status, error] of [[422, 'invalid_command'], [404, 'no_game'], [500, 'server_error'], [503, 'provider_not_available']]) {
     const api = createGameApi(async () => ({ ok: false, status, json: async () => ({ error, message: 'Useful message' }) }));
     await assert.rejects(api.getGame, (failure) => failure instanceof ApiError && failure.code === error && failure.status === status && failure.message === 'Useful message');
   }

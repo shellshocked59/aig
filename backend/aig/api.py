@@ -73,12 +73,14 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
-    session = GameSession(app.state.settings.ai, ollama_settings=app.state.settings.ollama)
+    session = GameSession(app.state.settings.ai, ollama_settings=app.state.settings.ollama,
+                          openai_settings=app.state.settings.openai)
     app.state.session = session
 
     @app.exception_handler(ApplicationError)
     async def application_error(request: Request, exc: ApplicationError):
-        status = {"no_game": 404, "invalid_state": 409, "invalid_command": 422}[exc.code]
+        status = {"no_game": 404, "invalid_state": 409, "invalid_command": 422,
+                  "provider_not_available": 503}[exc.code]
         return JSONResponse(status_code=status, content={"error": exc.code, "message": str(exc)})
 
     @app.exception_handler(RequestValidationError)
@@ -110,11 +112,19 @@ def create_app() -> FastAPI:
 
     @app.post("/api/game/demo/ai")
     def create_ai_demo():
+        return session.demo(versus_ai=True, provider="heuristic")
+
+    @app.post("/api/game/demo/configured")
+    def create_configured_ai_demo():
         return session.demo(versus_ai=True)
 
     @app.post("/api/game/demo/llm")
     def create_llm_demo():
         return session.demo(versus_ai=True, provider="ollama")
+
+    @app.post("/api/game/demo/openai")
+    def create_openai_demo():
+        return session.demo(versus_ai=True, provider="openai")
 
     @app.post("/api/game/start")
     def start():

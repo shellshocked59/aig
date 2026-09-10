@@ -10,7 +10,7 @@ async function setup(t, { state = gameFixture(), overrides = {} } = {}) {
   const dom = new JSDOM('<main id="app"></main>', { url: 'http://localhost:5173' });
   const root = dom.window.document.querySelector('#app');
   const calls = [];
-  const api = Object.fromEntries(['getGame', 'createDemoGame', 'createAiDemoGame', 'createLlmDemoGame', 'startGame', 'moveUnit', 'attackUnit', 'foundCity', 'setProduction', 'setResearch', 'endActivation'].map((name) => [name, async (...args) => {
+  const api = Object.fromEntries(['getGame', 'createDemoGame', 'createAiDemoGame', 'createLlmDemoGame', 'createOpenAiDemoGame', 'createConfiguredAiDemoGame', 'startGame', 'moveUnit', 'attackUnit', 'foundCity', 'setProduction', 'setResearch', 'endActivation'].map((name) => [name, async (...args) => {
     calls.push([name, ...args]);
     return overrides[name] ? overrides[name](...args) : structuredClone(state);
   }]));
@@ -264,6 +264,50 @@ test('LLM demo uses explicit provider metadata and keeps AI loading until Python
   assert.deepEqual(calls.at(-1), ['createDemoGame']);
 });
 
+test('configured AI uses its API route and displays the resolved provider after refresh', async (t) => {
+  for (const provider of ['heuristic', 'ollama', 'openai']) {
+    const state = gameFixture();
+    state.players[1].controller = 'ai';
+    state.aiProviders = { B: provider };
+    state.game = { turn: 0, activePlayerId: null, status: 'pre_game' };
+    let created = false;
+    const { root, click, calls } = await setup(t, { state, overrides: {
+      getGame: () => {
+        if (!created) throw new ApiError('no_game', 'Create a game', 404);
+        return state;
+      },
+      createConfiguredAiDemoGame: () => { created = true; return state; },
+    } });
+    assert.match(root.querySelector('[data-action="demo-configured"]').textContent, /Human vs Configured AI/);
+    await click('[data-action="demo-configured"]');
+    assert.deepEqual(calls.at(-1), ['createConfiguredAiDemoGame']);
+    assert.ok(root.querySelector('[data-action="start"]'));
+    const label = provider === 'openai' ? /Human vs OpenAI/ : provider === 'ollama' ? /Human vs LLM/ : /Human vs Heuristic AI/;
+    assert.match(root.querySelector('.edition').textContent, label);
+    await click('[data-action="refresh"]');
+    assert.match(root.querySelector('.edition').textContent, label);
+  }
+});
+
+test('unavailable configured AI shows the backend error and preserves the current game', async (t) => {
+  const message = 'OpenAI requires OPENAI_API_KEY when selected.';
+  for (const hasGame of [false, true]) {
+    const { root, click } = await setup(t, { overrides: {
+      getGame: () => {
+        if (!hasGame) throw new ApiError('no_game', 'Create a game', 404);
+        return gameFixture();
+      },
+      createConfiguredAiDemoGame: () => { throw new ApiError('provider_not_available', message, 503); },
+    } });
+    const before = root.querySelector('.hud')?.textContent;
+    await click('[data-action="demo-configured"]');
+    assert.equal(root.querySelector('[role="alert"]').textContent, message);
+    assert.equal(root.querySelector('.hud')?.textContent, before);
+    assert.equal(root.querySelector('[data-action="demo-ai"]').disabled, false);
+    assert.equal(root.querySelector('[data-action="demo"]').disabled, false);
+  }
+});
+
 test('AI turn loading disables every control, renders final human turn, and clears selection', async (t) => {
   const state = gameFixture();
   state.players[1].controller = 'ai';
@@ -306,6 +350,8 @@ test('scenario reset from an existing match uses the selected scenario', async (
   const { click, calls } = await setup(t);
   await click('[data-action="demo-ai"]');
   assert.deepEqual(calls.at(-1), ['createAiDemoGame']);
+  await click('[data-action="demo-configured"]');
+  assert.deepEqual(calls.at(-1), ['createConfiguredAiDemoGame']);
   await click('[data-action="demo"]');
   assert.deepEqual(calls.at(-1), ['createDemoGame']);
 });
@@ -328,4 +374,24 @@ test('AI active state exposes inspection but no manual research or unit orders',
   assert.equal(root.querySelector('#research'), null);
   await click('#tile-2-0');
   assert.deepEqual(calls, [['getGame']]);
+});
+
+
+test('explicit OpenAI demo and reset preserve the mode label and existing choices', async (t) => {
+  const state = gameFixture();
+  state.players[1].controller = 'ai';
+  state.aiProviders = { B: 'openai' };
+  state.game = { turn: 0, activePlayerId: null, status: 'pre_game' };
+  const { root, click, calls } = await setup(t, { state, overrides: {
+    getGame: () => { throw new ApiError('no_game', 'Create a game', 404); },
+  } });
+  await click('[data-action="demo-openai"]');
+  assert.deepEqual(calls.at(-1), ['createOpenAiDemoGame']);
+  assert.match(root.querySelector('.edition').textContent, /Human vs OpenAI/);
+  assert.ok(root.querySelector('[data-action="start"]'));
+  for (const mode of ['demo', 'demo-ai', 'demo-llm', 'demo-configured', 'demo-openai']) {
+    assert.ok(root.querySelector(`[data-action="${mode}"]`));
+  }
+  await click('[data-action="demo-openai"]');
+  assert.deepEqual(calls.at(-1), ['createOpenAiDemoGame']);
 });

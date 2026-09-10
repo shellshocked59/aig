@@ -12,8 +12,9 @@ from aig.ai.benchmark_metrics import RunMetrics, inference_metrics
 from aig.ai.controller import AiOrchestrator
 from aig.ai.executor import AiExecutor
 from aig.ai.ollama import OllamaStrategyProvider, PROMPT_VERSION
+from aig.ai.openai import OpenAIStrategyProvider, public_configuration
 from aig.ai.plan_schema import PLAN_SCHEMA_VERSION, canonical_json
-from aig.ai.strategy import HeuristicStrategyProvider
+from aig.ai.strategy import HeuristicStrategyProvider, StrategyProviderError
 from aig.scenarios import human_vs_ai_demo_setup
 from aig.settings import Settings, load_settings
 from aig.setup import create_game, start_game
@@ -64,6 +65,8 @@ def make_provider(name: str, settings: Settings):
         return HeuristicStrategyProvider()
     if name == "ollama":
         return OllamaStrategyProvider(settings.ollama)
+    if name == "openai":
+        return OpenAIStrategyProvider(settings.openai)
     raise ValueError(f"unknown provider: {name}")
 
 
@@ -112,12 +115,14 @@ def run_trial(provider, *, provider_name: str, turns: int, settings: Settings, d
                 # Whitelist telemetry: no messages, prompts, or hidden reasoning.
                 record = {key: trace[key] for key in (
                     "requested_provider", "actual_provider", "model", "model_configuration", "prompt_version",
-                    "schema_version", "retry_count", "fallback_used", "wall_clock_seconds", "error") if key in trace}
+                    "schema_version", "provider_schema_version", "retry_count", "fallback_used",
+                    "wall_clock_seconds", "error") if key in trace}
                 record.update(activation=activation, turn=turn, player_id=actor, strategic_state_sha256=strategic_hash,
                               attempts=[{k: a[k] for k in ("raw_content", "metrics", "wall_clock_seconds", "error",
-                                                           "error_category") if k in a}
+                                                           "error_category", "response_id", "request_id",
+                                                           "model", "http_status") if k in a}
                                         for a in trace.get("attempts", [])])
-                if provider_name == "ollama" or record["attempts"] or trace["fallback_used"]:
+                if provider_name in ("ollama", "openai") or record["attempts"] or trace["fallback_used"]:
                     traces["inference"].write(record)
                     inference.append(record)
             state.validate()
@@ -164,8 +169,8 @@ def benchmark(*, output: Path, games: int = 1, turns: int = 100, provider_a: str
     _integer(turns, "turns", minimum=1)
     if scenario != "human-vs-ai":
         raise ValueError("only the fixed human-vs-ai scenario is supported")
-    if any(p not in ("heuristic", "ollama") for p in (provider_a, provider_b)):
-        raise ValueError("providers must be heuristic or ollama")
+    if any(p not in ("heuristic", "ollama", "openai") for p in (provider_a, provider_b)):
+        raise ValueError("providers must be heuristic, ollama, or openai")
     settings = settings if settings is not None else load_settings()
     output = Path(output)
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
@@ -180,6 +185,8 @@ def benchmark(*, output: Path, games: int = 1, turns: int = 100, provider_a: str
                                      turnOrder=initial.turn_order, executionOrder="A then B per pair",
                                      promptVersion=PROMPT_VERSION, planSchemaVersion=PLAN_SCHEMA_VERSION),
                   runs=[], comparison=[])
+    if "openai" in (provider_a, provider_b):
+        report["configuration"]["openai"] = public_configuration(settings.openai)
     for pair in range(games):
         paired = []
         for slot, name in (("a", provider_a), ("b", provider_b)):
@@ -237,15 +244,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--games", type=int, default=1, help="number of pairs (each pair has two runs)")
     parser.add_argument("--turns", type=int, default=100, help="global turns per run")
-    parser.add_argument("--provider-a", choices=("heuristic", "ollama"), default="heuristic")
-    parser.add_argument("--provider-b", choices=("heuristic", "ollama"), default="heuristic",
-                        help="select ollama explicitly to opt into network inference")
+    parser.add_argument("--provider-a", choices=("heuristic", "ollama", "openai"), default="heuristic")
+    parser.add_argument("--provider-b", choices=("heuristic", "ollama", "openai"), default="heuristic",
+                        help="select ollama or openai explicitly to opt into network inference")
     parser.add_argument("--scenario", choices=("human-vs-ai",), default="human-vs-ai")
     parser.add_argument("--output", type=Path, default=Path("benchmark-results"))
     args = parser.parse_args(argv)
     try:
         report = benchmark(**vars(args))
-    except ValueError as error:
+    except (ValueError, StrategyProviderError) as error:
         parser.error(str(error))
     print(terminal_summary(report))
     print(f"Report: {args.output / 'summary.json'}")

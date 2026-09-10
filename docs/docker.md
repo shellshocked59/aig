@@ -45,6 +45,18 @@ interpolation.
 | `POSTGRES_USER` | `aig` | Initial database user |
 | `POSTGRES_PASSWORD` | `aig-dev` | Local development password |
 | `AIG_OLLAMA_*`, `AIG_AI_*` | Python defaults | Existing model and AI settings |
+| `OPENAI_API_KEY` | unset | Optional cloud credential, Python API runtime only |
+| `AIG_OPENAI_*` | Python defaults | Model, timeout, output limit, and reasoning effort |
+
+OpenAI planning uses **Browser -> Python API -> OpenAI**. Both API image targets
+install the official SDK as a normal runtime dependency. Setting a key alone does
+not select OpenAI: use `AIG_STRATEGY_PROVIDER=openai` for configured AI or the
+explicit Human vs OpenAI demo. Rebuild API images after updating dependencies.
+Put `OPENAI_API_KEY=<your key>` in the ignored root `.env`.
+All five [OpenAI settings](../README.md#optional-openai-configuration)
+are passed only to `api`, never `web` or build arguments. Production uses the
+existing `/var/www/tca/aig/.env.production` described in the
+[deployment guide](deployment.md#optional-openai-configuration).
 
 The API receives standard libpq variables (`PGHOST`, `PGPORT`, `PGDATABASE`,
 `PGUSER`, `PGPASSWORD`) and `REDIS_URL=redis://redis:6379/0`. Its image installs

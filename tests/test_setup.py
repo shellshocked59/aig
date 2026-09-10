@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import unittest
+from unittest.mock import patch
 
 from aig.commands import (
     AttackUnit, EndActivation, FoundCity, MoveUnit, SetCityProduction,
@@ -14,6 +15,7 @@ from aig.commands import (
 from aig.economy import city_yields
 from aig.movement import find_path
 from aig.scenarios import demo_game_setup
+from aig.settings import load_settings
 from aig.setup import GameSetup, PlayerSetup, create_game, start_game
 from aig.snapshots import from_snapshot, to_snapshot
 from aig.state import (
@@ -296,8 +298,10 @@ class DemoIntegrationTests(unittest.TestCase):
         blocks = re.findall(r"```python\n(.*?)```", readme.read_text(encoding="utf-8"), re.DOTALL)
         self.assertGreater(len(blocks), 0)
         namespace = {"__name__": "__readme__"}
-        for index, block in enumerate(blocks, 1):
-            exec(compile(block, f"README.md:python-example-{index}", "exec"), namespace)
+        # The startup example must not load the developer's local credentials.
+        with patch("aig.settings.load_settings", return_value=load_settings(local_file=None, environ={})):
+            for index, block in enumerate(blocks, 1):
+                exec(compile(block, f"README.md:python-example-{index}", "exec"), namespace)
 
 
 if __name__ == "__main__":

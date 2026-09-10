@@ -4,11 +4,12 @@ from collections.abc import Callable
 from copy import deepcopy
 from threading import RLock
 
-from aig.ai import AiActivationResult, AiOrchestrator, OllamaStrategyProvider, StrategyProvider
+from aig.ai import (AiActivationResult, AiOrchestrator, OllamaStrategyProvider,
+                    OpenAIStrategyProvider, StrategyProvider, StrategyProviderError)
 from aig.commands import Command, FoundCity, apply_command
 from aig.public_state import public_state
 from aig.scenarios import demo_game_setup, human_vs_ai_demo_setup
-from aig.settings import AiSettings, OllamaSettings
+from aig.settings import AiSettings, OllamaSettings, OpenAISettings, StrategyProviderName
 from aig.setup import create_game, start_game
 from aig.state import ControllerType, GameState
 
@@ -30,7 +31,9 @@ class GameSession:
     def __init__(self, ai_settings: AiSettings = AiSettings(),
                  strategy_provider: StrategyProvider | None = None, *,
                  ollama_settings: OllamaSettings = OllamaSettings(),
-                 ollama_provider: StrategyProvider | None = None) -> None:
+                 ollama_provider: StrategyProvider | None = None,
+                 openai_settings: OpenAISettings = OpenAISettings(),
+                 openai_provider: StrategyProvider | None = None) -> None:
         self._state: GameState | None = None
         self._next_city_id = 1
         self._lock = RLock()
@@ -38,11 +41,19 @@ class GameSession:
         self._strategy_provider = strategy_provider
         self._ollama_settings = ollama_settings
         self._ollama_provider = ollama_provider
+        self._openai_settings = openai_settings
+        self._openai_provider = openai_provider
         self._provider_name = "heuristic"
         self._reset_ai()
 
-    def _reset_ai(self, provider_name: str = "heuristic") -> None:
+    def _reset_ai(self, provider_name: StrategyProviderName = "heuristic") -> None:
+        # Selection failures are configuration errors, outside inference fallback.
         provider = self._strategy_provider
+        if provider_name == "openai":
+            try:
+                provider = self._openai_provider or OpenAIStrategyProvider(self._openai_settings)
+            except StrategyProviderError as error:
+                raise ApplicationError("provider_not_available", str(error)) from None
         if provider_name == "ollama":
             provider = self._ollama_provider or OllamaStrategyProvider(self._ollama_settings)
         self.ai = AiOrchestrator(provider,
@@ -70,11 +81,14 @@ class GameSession:
         with self._lock:
             return self._public_state()
 
-    def demo(self, *, versus_ai: bool = False, provider: str = "heuristic") -> dict:
-        if provider not in {"heuristic", "ollama"}:
-            raise ValueError("demo provider must be heuristic or ollama")
+    def demo(self, *, versus_ai: bool = False,
+             provider: StrategyProviderName | None = None) -> dict:
+        """Omitted provider uses application configuration; explicit demos override it."""
+        if provider is not None and provider not in ("heuristic", "ollama", "openai"):
+            raise ValueError("demo provider must be heuristic, ollama, or openai")
         with self._lock:
-            self._reset_ai(provider if versus_ai else "heuristic")
+            selected = self._ai_settings.strategy_provider if provider is None else provider
+            self._reset_ai(selected if versus_ai else "heuristic")
             self._state = create_game(human_vs_ai_demo_setup() if versus_ai else demo_game_setup())
             self._next_city_id = 1
             return self._public_state()

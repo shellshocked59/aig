@@ -71,7 +71,50 @@ explicitly verify the two AIG domains above. The job reports to the GitHub
 `production` environment; any existing protection rules for that environment
 still apply.
 
+## Optional OpenAI configuration
+
+The request path is **Browser -> Python API -> OpenAI**. The API runtime image
+installs the official OpenAI Python SDK through its normal runtime dependencies.
+Set `AIG_STRATEGY_PROVIDER=openai` for Human vs Configured AI, or select the
+explicit Human vs OpenAI browser mode. Human vs LLM remains Ollama.
+Adding a key does not select OpenAI; heuristic and Ollama modes need no cloud key.
+
+Development uses `OPENAI_API_KEY=<your key>` in the ignored root `.env`.
+On the server, add it to the existing **`/var/www/tca/aig/.env.production`**, keeping
+that file's owner-only permissions. The deployment script preserves this file and
+already passes it to Compose with `--env-file`; no new secret file or GitHub
+secret is needed. Redeploy to recreate the API container with changed settings.
+
+```ini
+OPENAI_API_KEY=<your key>
+AIG_OPENAI_MODEL=gpt-5.6-luna
+AIG_OPENAI_TIMEOUT_SECONDS=20
+AIG_OPENAI_MAX_OUTPUT_TOKENS=512
+AIG_OPENAI_REASONING_EFFORT=none
+```
+
+All five variables are enumerated only in the API service's runtime environment
+in both Compose files. An absent/empty key is optional during startup; the
+provider requires it only when selected, returning a controlled HTTP 503 if absent. The four tuning settings
+use committed Python defaults when Compose passes empty values. See the
+[settings reference](../README.md#optional-openai-configuration) for
+precedence and validation. There is no `AIG_OPENAI_API_KEY` alias.
+
+Keep real keys out of `.env.example`, frontend environment, Docker build arguments,
+and image layers. Existing `.gitignore` and `.dockerignore` exclude `.env` and
+`.env.*` except the committed example. The static build only embeds the public API
+origin; neither DTOs nor snapshots include settings. `repr=False` hides the key
+in settings representations, but does not protect `asdict()`/`vars()` serialization.
+Diagnostics must explicitly select non-secret fields.
+
 ## What happens on deployment
+
+The production smoke script verifies that the SDK imports without contacting
+OpenAI. Live verification is an explicit operator action:
+`python -m aig.ai.openai_smoke` inside the configured API environment makes exactly one
+request, validates it, prints sanitized usage/latency, and fails without fallback.
+The [provider guide](openai-provider.md#explicit-use) also gives the two-pair,
+100-turn benchmark command. Neither command is invoked by deployment or CI.
 
 1. The runner sends the tested deployment script over SSH with its commit SHA.
 2. The script locks the checkout, rejects tracked server edits, fetches `main`,
@@ -96,9 +139,9 @@ still apply.
    the API's health/revision header, and JSON CORS preflight. A routing error,
    stale frontend/API revision, or failed check makes deployment red.
 
-This performs HTTP checks without browser integration. Production AI-provider
-integration remains separate work; no model server or provider API key is
-provisioned by deployment. The current game still uses one shared in-memory
+This performs HTTP checks without browser integration. Live AI-provider
+verification remains an explicit operator action; no model server or provider
+API key is provisioned by deployment. The current game still uses one shared in-memory
 match, so API replacement resets it. PostgreSQL/Redis data volumes are retained.
 
 ## Operations and failures

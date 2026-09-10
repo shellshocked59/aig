@@ -6,8 +6,10 @@ from urllib.request import Request, urlopen
 
 import psycopg
 import redis
+import openai
 
 
+assert callable(openai.OpenAI)  # Runtime SDK installed; no credentials or inference required.
 origin = os.environ["AIG_HTTP_CORS_ORIGINS"].split(",")[0].strip()
 with urlopen(Request("http://127.0.0.1:8000/api/health", headers={"Origin": origin}), timeout=5) as response:
     assert json.load(response) == {"status": "ok"}

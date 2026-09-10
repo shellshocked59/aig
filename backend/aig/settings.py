@@ -5,11 +5,15 @@ to consumers. Importing this module performs no file or environment loading.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 import math
 import os
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
+
+
+StrategyProviderName = Literal["heuristic", "ollama", "openai"]
 
 
 @dataclass(frozen=True)
@@ -35,15 +39,51 @@ class OllamaSettings:
 
 
 @dataclass(frozen=True)
+class OpenAISettings:
+    """Optional backend credentials and defaults for cloud strategic planning.
+
+    Never serialize this object with asdict()/vars(): repr=False only protects
+    representations. Traces must explicitly allowlist non-secret fields.
+    Configuring a key does not select a provider or require network access.
+    """
+
+    api_key: str | None = field(default=None, repr=False)
+    model: str = "gpt-5.6-luna"
+    timeout_seconds: float = 20.0
+    max_output_tokens: int = 512
+    reasoning_effort: str = "none"
+
+    def __post_init__(self) -> None:
+        if self.api_key == "":
+            object.__setattr__(self, "api_key", None)
+        if self.api_key is not None and (
+                not isinstance(self.api_key, str) or not self.api_key.strip()):
+            raise ValueError("OPENAI_API_KEY must be a nonblank string when set")
+        if not isinstance(self.model, str) or not self.model.strip():
+            raise ValueError("AIG_OPENAI_MODEL must be a nonblank string")
+        if (isinstance(self.timeout_seconds, bool)
+                or not isinstance(self.timeout_seconds, (int, float))
+                or not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0):
+            raise ValueError("AIG_OPENAI_TIMEOUT_SECONDS must be a finite positive number")
+        if type(self.max_output_tokens) is not int or self.max_output_tokens <= 0:
+            raise ValueError("AIG_OPENAI_MAX_OUTPUT_TOKENS must be a positive integer")
+        if self.reasoning_effort not in ("none", "low", "medium", "high", "xhigh", "max"):
+            raise ValueError("AIG_OPENAI_REASONING_EFFORT must be none, low, medium, high, xhigh, or max")
+
+
+@dataclass(frozen=True)
 class AiSettings:
     replan_interval: int = 5
     max_actions: int = 256
+    strategy_provider: StrategyProviderName = "heuristic"
 
     def __post_init__(self) -> None:
-        for field in fields(self):
-            value = getattr(self, field.name)
+        if self.strategy_provider not in ("heuristic", "ollama", "openai"):
+            raise ValueError("AIG_STRATEGY_PROVIDER must be heuristic, ollama, or openai")
+        for name in ("replan_interval", "max_actions"):
+            value = getattr(self, name)
             if type(value) is not int or value < 1:
-                raise ValueError(f"AIG_AI_{field.name.upper()} must be a positive integer")
+                raise ValueError(f"AIG_AI_{name.upper()} must be a positive integer")
 
 
 @dataclass(frozen=True)
@@ -70,6 +110,20 @@ class Settings:
     ollama: OllamaSettings = OllamaSettings()
     ai: AiSettings = AiSettings()
     http: HttpSettings = HttpSettings()
+    openai: OpenAISettings = OpenAISettings()
+
+
+_SETTING_GROUPS = (("ollama", OllamaSettings), ("ai", AiSettings),
+                   ("http", HttpSettings), ("openai", OpenAISettings))
+
+
+def _environment_name(group: str, field_name: str) -> str:
+    if group == "ai" and field_name == "strategy_provider":
+        return "AIG_STRATEGY_PROVIDER"
+    # Deliberate exception: there is no AIG_OPENAI_API_KEY alias.
+    if group == "openai" and field_name == "api_key":
+        return "OPENAI_API_KEY"
+    return f"AIG_{group.upper()}_{field_name.upper()}"
 
 
 # Relative to this checkout, never to the shell's current working directory.
@@ -90,13 +144,15 @@ def load_settings(
     environment = os.environ if environ is None else environ
     local = {} if local_file is None else _read_local_file(local_file)
     groups = {}
-    for group, kind in (("ollama", OllamaSettings), ("ai", AiSettings), ("http", HttpSettings)):
+    for group, kind in _SETTING_GROUPS:
         defaults = kind()
         values = {}
         for field in fields(defaults):
-            name = f"AIG_{group.upper()}_{field.name.upper()}"
+            name = _environment_name(group, field.name)
             default = getattr(defaults, field.name)
             raw = environment.get(name) or local.get(name)
+            if name == "OPENAI_API_KEY" and raw == "":
+                raw = None
             values[field.name] = default if raw is None else _parse_value(name, raw, default)
         groups[group] = kind(**values)
     return Settings(**groups)
@@ -108,9 +164,8 @@ def _read_local_file(path: Path) -> dict[str, str]:
     except FileNotFoundError:
         return {}
 
-    known = {f"AIG_OLLAMA_{field.name.upper()}" for field in fields(OllamaSettings)}
-    known |= {f"AIG_AI_{field.name.upper()}" for field in fields(AiSettings)}
-    known |= {f"AIG_HTTP_{field.name.upper()}" for field in fields(HttpSettings)}
+    known = {_environment_name(group, field.name)
+             for group, kind in _SETTING_GROUPS for field in fields(kind)}
     values = {}
     for number, raw_line in enumerate(contents.splitlines(), start=1):
         line = raw_line.strip()
@@ -134,7 +189,7 @@ def _read_local_file(path: Path) -> dict[str, str]:
 
 
 def _parse_value(
-    name: str, raw: str, default: str | int | float | bool,
+    name: str, raw: str, default: str | int | float | bool | None,
 ) -> str | int | float | bool:
     if isinstance(default, bool):
         value = raw.strip().lower()

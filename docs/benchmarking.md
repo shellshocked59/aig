@@ -47,6 +47,26 @@ trials. A reused fallback plan counts as reuse, not another fallback invocation.
 Unexpected engine/action-limit errors abort the CLI; partial trace files are not
 a completed report and no `summary.json` is written.
 
+`openai` is also an explicit provider choice, independent of
+`AIG_STRATEGY_PROVIDER`. Configure `OPENAI_API_KEY` on the backend first. Its
+default cloud model is `gpt-5.6-luna`; no pricing is embedded in provider logic.
+
+```powershell
+# Explicit cloud opt-in: two pairs, four simulations total.
+.venv\Scripts\python.exe -m aig.ai.benchmark --provider-a heuristic --provider-b openai --games 2 --turns 100 --output benchmark-results\luna
+```
+
+OpenAI follows the same pure/MIXED fallback reporting. Inference records include
+configured and returned model IDs, response/request IDs, and available input,
+cached input, output, reasoning, and total token counts for each attempt.
+`inference.openai_usage` in the summary adds per-counter statistics and totals,
+including repair requests. Missing usage is omitted from samples; a null total
+means unavailable. Cached input and reasoning are subsets of input and output,
+respectively, not extra tokens to add. These counters support future cost reports
+with explicit pricing dates; incomplete coverage cannot establish full cost.
+Existing Ollama token/timing fields remain unchanged. See the
+[provider contract and one-request smoke command](openai-provider.md).
+
 ## Files and versioned report contract
 
 ```text

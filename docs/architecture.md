@@ -16,9 +16,57 @@ combat, economy, production-unlock, or research-prerequisite rules. It never
 contacts Ollama or any other external service. Each action waits for a returned
 authoritative state before rendering. A conventional heuristic AI now uses the
 same command boundary. Ollama supplies alternative strategic plans through the
-same provider protocol. No HTTP imports were added to engine modules.
+same provider protocol, as does OpenAI. No HTTP imports were added to engine modules.
+
+## OpenAI configuration boundary
+
+The cloud request path is **Browser -> Python API -> OpenAI**.
+`OpenAIStrategyProvider` uses the official synchronous Python SDK and Responses
+API, configured by frozen `OpenAISettings` under application `Settings`.
+Configuring a key does not change provider selection. Heuristic and Ollama modes
+remain usable without it, and snapshot schema v8 and gameplay are unchanged.
+
+`load_settings()` remains explicit at the application boundary and never mutates
+`os.environ`. Non-empty process values override the root/local env file, then
+committed defaults. `OPENAI_API_KEY` is the sole naming exception to `AIG_*`,
+with no alias; empty keys fall through and a missing key is `None`. Whitespace
+validation follows the existing string/file parsing conventions. The frozen
+configuration also contains model `gpt-5.6-luna`, timeout `20.0`, output limit
+`512`, and reasoning effort `none`, with validation documented in the
+[settings reference](../README.md#optional-openai-configuration).
+The provider requires the key only upon OpenAI selection.
+
+Only the Python process receives cloud configuration through Compose runtime
+environment. Development keys belong in the ignored root `.env`; production
+uses `/var/www/tca/aig/.env.production`. The browser receives public game-state
+DTOs and never receives credentials or contacts OpenAI directly. Settings are
+not game state, snapshot data, or public diagnostics. The credential field uses
+`repr=False`, which does **not** redact `dataclasses.asdict()` or `vars()`.
+OpenAI traces allowlist non-secret configuration fields and redact accidental
+key echoes rather than copying the Ollama `asdict` trace pattern.
+Offline regression tests cover representations, API output including AI traces,
+snapshots, API-only Compose wiring, and isolated frontend build artifacts.
 
 ## Deterministic heuristic AI
+
+The planner boundary supports all three providers:
+
+```text
+GameState -> StrategicStateBuilder -> StrategyProvider
+                                      |-- Heuristic
+                                      |-- Ollama
+                                      `-- OpenAI -> Responses API
+StrategicPlan -> deterministic executor -> existing commands
+```
+
+OpenAI reuses `strategy-v1` instructions and the existing application validator.
+Its strict wire schema omits only the undocumented `uniqueItems`/`minLength`
+constraints; application validation retains both. Stateless requests use
+`store=False` and no conversation or response chaining. One invalid-plan repair
+precedes the existing controller fallback, with SDK retries disabled. Bounded
+traces include redacted output, local latency, and available usage counters;
+no provider/network data enters GameState. See the
+[OpenAI provider contract](openai-provider.md) for details and offline coverage.
 
 ```text
 GameState
@@ -326,9 +374,9 @@ aig.ai.ollama_smoke` (one plan) or `--turns 10` (disposable headless match).
 
 ## Application settings
 
-`backend/aig/settings.py` owns frozen `Settings` and `OllamaSettings` dataclasses,
+`backend/aig/settings.py` owns frozen `Settings` and its provider/AI/HTTP dataclasses,
 committed development defaults, and the explicit `load_settings()` boundary.
-For each `AIG_OLLAMA_*` or `AIG_AI_*` value, a non-empty process environment override takes
+For each supported setting (including `OPENAI_API_KEY`), a non-empty process environment override takes
 priority over the optional root `.env`, which takes priority over the Python
 default. `.env` is ignored; `.env.example` documents all supported names. See the
 [settings guide](../README.md#application-settings) for defaults, parsing, and use.
@@ -344,14 +392,66 @@ consistently fall through, and invalid boolean spellings fail explicitly.
 
 The API factory calls `load_settings()` once per application instance. It creates
 the session with AI settings and `settings.ollama`. The session constructs
-`OllamaStrategyProvider(settings.ollama)` only for the explicit LLM demo. Startup
-and hot-seat/heuristic play require no model server.
+`OllamaStrategyProvider(settings.ollama)` when configured AI play selects Ollama
+or the explicit LLM demo is requested. Startup and hot-seat/heuristic play
+require no model server.
 The deterministic engine does not read application settings; `GameConfig` remains
 per-game state and application settings are not serialized in snapshots. This
 layer adds no network calls or runtime dependencies. Frozen `AiSettings` supplies
 `AIG_AI_REPLAN_INTERVAL=5` and `AIG_AI_MAX_ACTIONS=256`, both positive integers,
 to session orchestration. `tests/test_settings.py` uses temporary files and isolated
 environment mappings to verify defaults, precedence, parsing, and immutability.
+
+### Application provider selection versus provider configuration
+
+Frozen `AiSettings.strategy_provider: StrategyProviderName` uses the small
+`Literal["heuristic", "ollama", "openai"]` type in `settings.py`, with runtime
+validation and committed default `heuristic`. Its environment name is explicitly
+`AIG_STRATEGY_PROVIDER`, without an `AI_` prefix. Like existing string choices,
+names are case-sensitive. Unknown effective values fail clearly; empty process
+values fall through to `.env` and then defaults. Empty local selector values
+are invalid. Generic settings loading permits `openai` without an API key.
+
+`AIG_STRATEGY_PROVIDER` chooses the normal application provider; `AIG_OLLAMA_*`
+configure Ollama, and `OPENAI_API_KEY` / `AIG_OPENAI_*` configure OpenAI. A URL or
+credential alone never selects a provider. For example, in an ignored `.env`:
+
+```ini
+# Local development using LAN Ollama
+AIG_STRATEGY_PROVIDER=ollama
+```
+
+```ini
+# Future hosted/cloud deployment (provider implementation pending)
+AIG_STRATEGY_PROVIDER=openai
+OPENAI_API_KEY=...
+```
+
+Selection is centralized in `GameSession.demo()` / `_reset_ai()`, outside the
+providers and engine. Omitting `provider` during AI game creation resolves
+`settings.ai.strategy_provider`; an explicit argument takes precedence.
+The browser adds **Human vs Configured AI** (`POST /api/game/demo/configured`)
+alongside unchanged hot-seat, **Human vs Heuristic AI** (`/demo/ai`, explicitly
+heuristic), and **Human vs LLM** (`/demo/llm`, explicitly Ollama). The existing
+`aiProviders` mapping reports the resolved provider; headers use existing labels
+even after refresh. No snapshot field or browser configuration endpoint is added.
+
+Provider construction remains lazy until demo selection. Heuristic uses the
+existing injected/default orchestrator provider, and Ollama uses its existing
+settings/injection path. OpenAI uses the resolved OpenAI settings and requires
+a key at construction. A missing key maps to `provider_not_available` (HTTP 503)
+before replacing the orchestrator or game. Inference failures instead follow
+the existing controller heuristic fallback. Ollama retry, fallback, plan reuse
+and tracing are unchanged. **Human vs OpenAI** (`/demo/openai`) is an additional
+explicit mode, also displayed correctly after refresh.
+
+The benchmark retains its own explicit provider factory and CLI arguments:
+`--provider-a heuristic --provider-b ollama` wins regardless of the application
+selector, and omitted CLI choices still default to heuristic. Both Compose
+stacks forward the selector only to the Python API at runtime. Neither the
+selector nor provider credentials/URLs are injected into frontend builds.
+Regression tests cover configured execution, explicit overrides, missing-key
+OpenAI atomicity, benchmark CLI independence, and public/build secret exclusion.
 
 ## Authoritative state and snapshots
 

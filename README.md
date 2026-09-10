@@ -27,7 +27,7 @@ dist/             Generated browser-ready output (not committed)
 
 ## Current Status
 
-Prototype 0.0.1 is manually playable in the browser: create/start the fixed two-faction demo, found cities, move and fight with units, choose production and research, then continue hot-seat play or face the conventional heuristic AI in Human vs Heuristic AI. The sprite map has six terrain types, five unit types, and city labels. The engine retains snapshot schema v8 and all existing rules. Human vs LLM adds local Ollama planning. There is no procedural map generation, city combat/capture, authentication, multiplayer networking, or persistence UI.
+Prototype 0.0.1 is manually playable in the browser: create/start the fixed two-faction demo, found cities, move and fight with units, choose production and research, then continue hot-seat play or face the conventional heuristic AI in Human vs Heuristic AI. The sprite map has six terrain types, five unit types, and city labels. The engine retains snapshot schema v8 and all existing rules. Human vs LLM adds local Ollama planning; Human vs OpenAI adds cloud planning. There is no procedural map generation, city combat/capture, authentication, multiplayer networking, or persistence UI.
 
 ## Continuous Integration
 
@@ -142,6 +142,11 @@ in titles/details), and no animations, path preview, fog, city combat, or victor
 screen. Water/mountains remain impassable under the existing engine rules.
 
 ## Play the deterministic demo
+
+Choose **Human vs Configured AI** to use `AIG_STRATEGY_PROVIDER` from backend
+settings (default `heuristic`). **Human vs Heuristic AI** always selects heuristic;
+**Human vs LLM** always selects Ollama. Hot-seat stays human-only. After creation,
+the game header displays the resolved provider using the existing mode labels.
 
 For an autonomous opponent, choose **Human vs Heuristic AI**, then **Start Game**.
 You control Amber (A); the heuristic controls Azure (B). Found your first city,
@@ -402,8 +407,8 @@ Produced units stack with friendly units on the city center. The existing collis
 
 ## Application settings
 
-`backend/aig/settings.py` defines immutable `Settings` / `OllamaSettings` objects
-and the committed defaults for the Ollama strategy provider. Load them
+`backend/aig/settings.py` defines immutable `Settings`, `AiSettings`, `OllamaSettings`, and
+`OpenAISettings` objects and committed provider defaults. Load them
 explicitly when starting a caller or application:
 
 ```python
@@ -420,6 +425,7 @@ overrides. Normal development requires no local file.
 
 | Environment / `.env` name | Committed default |
 | --- | --- |
+| `AIG_STRATEGY_PROVIDER` | `heuristic` (options: `heuristic`, `ollama`, `openai`) |
 | `AIG_AI_REPLAN_INTERVAL` | `5` global turns |
 | `AIG_AI_MAX_ACTIONS` | `256` commands per AI activation |
 | `AIG_OLLAMA_BASE_URL` | `http://10.0.0.250:11434` |
@@ -433,8 +439,8 @@ overrides. Normal development requires no local file.
 | `AIG_OLLAMA_STREAM` | `false` |
 | `AIG_OLLAMA_TIMEOUT_SECONDS` | `20.0` |
 
-The LAN address is an intentional, non-secret development default: by default,
-local development expects Ollama there, but any machine may override it.
+The LAN address is an intentional, non-secret default for explicitly selected
+Ollama play. Configuring it does not select Ollama or cause a network request.
 Create an ignored `.env` at the repository root with only the desired overrides,
 or copy `.env.example` as a starting point:
 
@@ -453,7 +459,8 @@ comments, and optional matching single/double quotes around values. The last
 duplicate key wins. Shell expansion, interpolation, `export`, and inline comments
 are unsupported; values are literal. Unrelated names are ignored, while unknown
 `AIG_` names in the file raise an error to catch typos. Empty local values are
-invalid if selected; omit the line to inherit a default. Whitespace-only process
+invalid if selected, except the optional `OPENAI_API_KEY`; omit tuning settings
+to inherit their defaults. Whitespace-only process
 values are invalid rather than treated as absent.
 
 Integers and floats are parsed explicitly; context/output limits must be positive,
@@ -477,7 +484,110 @@ interval expires or their target becomes invalid. The command limit includes
 Applied commands remain committed if an unexpected AI error occurs. These are
 application controls and do not alter engine rules or snapshot contents.
 
+### Selecting the normal application strategy provider
+
+`settings.ai.strategy_provider` chooses **which provider normal application AI
+play uses**. Provider-specific settings describe **how that provider works**:
+
+| Setting | Purpose |
+| --- | --- |
+| `AIG_STRATEGY_PROVIDER` | Select the normal application provider |
+| `AIG_OLLAMA_*` | Configure Ollama; does not select it |
+| `OPENAI_API_KEY` / `AIG_OPENAI_*` | Configure OpenAI; does not select it |
+
+The selector accepts exactly lowercase `heuristic`, `ollama`, or `openai`.
+It follows the same non-empty process environment > root `.env` > committed
+default precedence. Empty process values fall through; invalid effective values
+(including uppercase names or empty local values) raise a clear `ValueError`.
+The committed default stays `heuristic`, so a fresh checkout makes no external
+AI requests and needs no credentials or model server.
+
+```ini
+# Local development using LAN Ollama
+AIG_STRATEGY_PROVIDER=ollama
+```
+
+```ini
+# Hosted/cloud deployment
+AIG_STRATEGY_PROVIDER=openai
+OPENAI_API_KEY=...
+```
+
+Loading settings with `openai` succeeds even without a key. Selecting
+**Human vs Configured AI** constructs `OpenAIStrategyProvider`; a missing key
+returns HTTP 503 (`provider_not_available`) and preserves the current game.
+Startup, hot-seat, and explicit heuristic/Ollama demos remain available.
+**Human vs OpenAI** (`POST /api/game/demo/openai`) explicitly selects the cloud
+provider regardless of the configured default.
+
+`GameSession.demo(versus_ai=True)` resolves the configured provider at the
+application boundary; an explicit `provider=` overrides it. Browser configured
+play uses `POST /api/game/demo/configured`; existing `/demo/ai` and `/demo/llm`
+retain their explicit heuristic and Ollama contracts. Ollama keeps its existing
+construction, retry, heuristic inference fallback, plan reuse, and tracing.
+Both Compose files pass the selector only to the API at runtime; restart the
+backend after changing it. Benchmark `--provider-a` / `--provider-b` choices
+remain independent of this setting, with both still defaulting to heuristic.
+
+### Optional OpenAI configuration
+
+The cloud boundary is **Browser -> Python API -> OpenAI**. The official
+`openai>=2,<3` Python SDK is a normal backend runtime dependency, installed in
+both Docker API images. Cloud inference is optional unless selected. Setting a
+key does not select OpenAI; Human vs LLM still uses Ollama, and heuristic/Ollama
+startup needs no OpenAI key. The browser never receives the key.
+
+For development, put this in the ignored root `.env`:
+
+```ini
+OPENAI_API_KEY=<your key>
+```
+
+| Environment / `.env` name | `settings.openai` field | Default |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | `api_key: str \| None` | `None` |
+| `AIG_OPENAI_MODEL` | `model: str` | `gpt-5.6-luna` |
+| `AIG_OPENAI_TIMEOUT_SECONDS` | `timeout_seconds: float` | `20.0` |
+| `AIG_OPENAI_MAX_OUTPUT_TOKENS` | `max_output_tokens: int` | `512` |
+| `AIG_OPENAI_REASONING_EFFORT` | `reasoning_effort: str` | `none` |
+
+`OPENAI_API_KEY` is the deliberate exception to `AIG_*`; there is no
+`AIG_OPENAI_API_KEY` alias. Non-empty process environment wins over the local
+file and defaults. An empty process key falls through to the file; an empty or
+missing local key resolves to `None`. Whitespace-only process values and quoted
+local values are invalid, matching existing string validation; unquoted local
+values are stripped by the env-file reader. The provider requires a
+key only when explicitly selected.
+
+The model must be nonblank, timeout finite and positive, and output limit a
+positive integer. Reasoning effort accepts exactly `none`, `low`, `medium`,
+`high`, `xhigh`, and `max`, as documented for
+[GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna).
+Loading performs no model-availability check. No temperature or seed is configured.
+
+Both Compose files pass these variables only to the Python API at runtime.
+Production uses the existing `/var/www/tca/aig/.env.production`; see
+[deployment configuration](docs/deployment.md#optional-openai-configuration).
+Local env files are excluded from Git and Docker build context. Keys never belong
+in frontend environment, build arguments, generated JavaScript, DTOs, or snapshots.
+The key is hidden from `repr(settings)` and `repr(settings.openai)`, but
+`dataclasses.asdict()` and `vars()` would still include it: do not serialize whole
+settings objects. Diagnostics explicitly select non-secret fields.
+
 ## Comparative AI benchmarks
+
+OpenAI uses the same `strategy-v1` instructions and application plan validator
+as Ollama, with strict Responses Structured Outputs, one invalid-plan repair,
+SDK retries disabled, and existing heuristic fallback. See the
+[OpenAI provider contract](docs/openai-provider.md) for schema compatibility,
+sanitized failure categories, token tracing, and deployment details.
+
+Explicit live commands (never run by tests or CI):
+
+```powershell
+.venv\Scripts\python.exe -m aig.ai.openai_smoke
+.venv\Scripts\python.exe -m aig.ai.benchmark --provider-a heuristic --provider-b openai --games 2 --turns 100 --output benchmark-results\luna
+```
 
 Run paired simulations from identical copies of the fixed demo. Each selected
 provider controls both factions in its own run; shared rules and executor stay

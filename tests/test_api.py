@@ -43,6 +43,10 @@ class CorsApiTests(unittest.TestCase):
 
 class GameApiTests(unittest.TestCase):
     def setUp(self):
+        # API tests must never load developer credentials from the root .env.
+        settings_patch = patch('aig.api.load_settings', return_value=load_settings(local_file=None, environ={}))
+        settings_patch.start()
+        self.addCleanup(settings_patch.stop)
         self.app = create_app()
         self.client = TestClient(self.app, raise_server_exceptions=False)
         self.addCleanup(self.client.close)

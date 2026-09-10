@@ -37,6 +37,7 @@ services:
     environment:
       # Compose reads the optional root .env; shell values take precedence.
       # Empty values let Python apply its committed defaults.
+      AIG_STRATEGY_PROVIDER: ${AIG_STRATEGY_PROVIDER:-}
       AIG_OLLAMA_BASE_URL: ${AIG_OLLAMA_BASE_URL:-}
       AIG_OLLAMA_MODEL: ${AIG_OLLAMA_MODEL:-}
       AIG_OLLAMA_CONTEXT_SIZE: ${AIG_OLLAMA_CONTEXT_SIZE:-}
@@ -47,6 +48,12 @@ services:
       AIG_OLLAMA_THINK: ${AIG_OLLAMA_THINK:-}
       AIG_OLLAMA_STREAM: ${AIG_OLLAMA_STREAM:-}
       AIG_OLLAMA_TIMEOUT_SECONDS: ${AIG_OLLAMA_TIMEOUT_SECONDS:-}
+      # Optional cloud configuration belongs only to the Python runtime.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AIG_OPENAI_MODEL: ${AIG_OPENAI_MODEL:-}
+      AIG_OPENAI_TIMEOUT_SECONDS: ${AIG_OPENAI_TIMEOUT_SECONDS:-}
+      AIG_OPENAI_MAX_OUTPUT_TOKENS: ${AIG_OPENAI_MAX_OUTPUT_TOKENS:-}
+      AIG_OPENAI_REASONING_EFFORT: ${AIG_OPENAI_REASONING_EFFORT:-}
       AIG_AI_REPLAN_INTERVAL: ${AIG_AI_REPLAN_INTERVAL:-}
       AIG_AI_MAX_ACTIONS: ${AIG_AI_MAX_ACTIONS:-}
       AIG_HTTP_CORS_ORIGINS: ${AIG_HTTP_CORS_ORIGINS:-}

@@ -14,6 +14,9 @@ FAILURE_CATEGORIES = (
     "transport_failure", "timeout", "non_2xx", "malformed_ollama_envelope",
     "malformed_json_content", "schema_validation", "invalid_strategic_references",
     "repair_failed", "heuristic_fallback",
+    "authentication_failure", "permission_denied", "model_not_available", "rate_limit",
+    "connection_failure", "api_error", "malformed_openai_response", "refusal",
+    "incomplete_response", "empty_output",
 )
 COUNTERS = (
     "activations_completed", "cities_founded", "settlers_produced", "attacks_executed",
@@ -54,11 +57,22 @@ def inference_metrics(traces: list[dict], context_size: int | None) -> dict:
         timings[normalized] = statistics(a["metrics"][raw] / 1_000_000_000 for a in attempts
                                         if raw in a.get("metrics", {}))
     maximum = tokens["prompt_eval_count"]["max"]
+    # Preserve Ollama counters/timings; cloud usage has its own names and totals.
+    cloud_keys = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens", "total_tokens")
+    cloud_attempts = [a for t in traces if t.get("requested_provider") == "openai"
+                      for a in t.get("attempts", [])]
+    cloud_usage = {}
+    if cloud_attempts:
+        for key in cloud_keys:
+            values = [a["metrics"][key] for a in cloud_attempts if key in a.get("metrics", {})]
+            cloud_usage[key] = dict(statistics(values), total=sum(values) if values else None)
     return dict(requests=len(attempts), retries=sum(t.get("retry_count", 0) for t in traces),
                 repair_success_count=sum(t.get("retry_count", 0) > 0 and not t["fallback_used"] for t in traces),
                 fallback_count=failures["heuristic_fallback"], failures=dict(failures),
                 schema_invalid_responses=failures["schema_validation"],
-                malformed_responses=failures["malformed_ollama_envelope"] + failures["malformed_json_content"],
+                malformed_responses=(failures["malformed_ollama_envelope"] + failures["malformed_json_content"]
+                                     + failures["malformed_openai_response"]),
+                **({"openai_usage": cloud_usage} if cloud_attempts else {}),
                 tokens=tokens, timings=timings, context_size=context_size,
                 maximum_prompt_tokens=maximum,
                 maximum_prompt_context_percent=(100 * maximum / context_size
