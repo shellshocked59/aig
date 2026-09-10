@@ -1,5 +1,6 @@
 """Basic tactical choices; every gameplay mutation goes through apply_command."""
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 
 from aig.ai.strategy import ExpansionPriority, Posture, StrategicPlan
@@ -74,7 +75,8 @@ class AiExecutor:
                     while city_id in state.cities:
                         city_id = f"{base}-{suffix}"
                         suffix += 1
-                    issue(FoundCity(actor, unit.id, city_id, f"{actor} Settlement {city_id}"))
+                    number = 1 + sum(c.owner_id == actor for c in state.cities.values())
+                    issue(FoundCity(actor, unit.id, city_id, f"{actor} Settlement {number}"))
                     break
                 path = self._settlement_path(state, unit)
                 if path is None:
@@ -109,7 +111,8 @@ class AiExecutor:
         return AiActivationResult(actor, plan, tuple(executed))
 
     @staticmethod
-    def _production(state, actor, plan, issue) -> None:
+    def _production(state: GameState, actor: str, plan: StrategicPlan,
+                    issue: Callable[[Command], None]) -> None:
         cities = sorted((c for c in state.cities.values() if c.owner_id == actor), key=lambda c: c.id)
         units = [u for u in state.units.values() if u.owner_id == actor]
         military_needed = sum(u.unit_type is not UnitType.SETTLER for u in units) < 2

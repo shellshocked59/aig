@@ -13,7 +13,7 @@ from aig.application import GameSession
 from aig.settings import AiSettings
 from aig.public_state import public_state
 from aig.snapshots import to_snapshot
-from aig.state import ControllerType, Position, UnitType
+from aig.state import Position, UnitType
 
 
 class GameApiTests(unittest.TestCase):
@@ -367,7 +367,6 @@ class GameApiTests(unittest.TestCase):
         self.assertIsNone(self.session.run_active_ai_activation())
 
     def test_ai_bound_error_is_server_failure_not_invalid_human_command(self):
-        self.app.state.session.ai.executor.max_actions = 1
         self.post('/demo/ai')
         self.post('/start')
         self.session.ai.executor.max_actions = 1

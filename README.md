@@ -12,7 +12,7 @@ Investigate whether an LLM can serve as a high-level strategy provider while con
 
 ## Architecture Direction
 
-The browser uses plain JavaScript, HTML, CSS, and esbuild. A thin FastAPI application exposes the deterministic Python engine through HTTP/JSON. The browser talks only to the Python API; all gameplay rules remain in the independently usable engine. AI and Ollama integration remain future work. See [architecture notes](docs/architecture.md).
+The browser uses plain JavaScript, HTML, CSS, and esbuild. A thin FastAPI application exposes the deterministic Python engine through HTTP/JSON. The browser talks only to the Python API; all gameplay rules remain in the independently usable engine. A deterministic heuristic opponent is available; Ollama integration remains future work. See [architecture notes](docs/architecture.md).
 
 ```text
 frontend/src/      Browser UI, API client, styles, and original local sprite atlas
@@ -27,7 +27,7 @@ dist/             Generated browser-ready output (not committed)
 
 ## Current Status
 
-Prototype 0.0.1 is manually playable in the browser: create/start the fixed two-faction demo, found cities, move and fight with units, choose production and research, then end each faction's activation and continue hot-seat play. The sprite map has six terrain types, five unit types, and city labels. The engine retains snapshot schema v8 and all existing rules. There is no AI, Ollama access, procedural map generation, city combat/capture, authentication, multiplayer networking, or persistence UI.
+Prototype 0.0.1 is manually playable in the browser: create/start the fixed two-faction demo, found cities, move and fight with units, choose production and research, then continue hot-seat play or face the conventional heuristic AI in Human vs AI Demo. The sprite map has six terrain types, five unit types, and city labels. The engine retains snapshot schema v8 and all existing rules. There is no Ollama access, procedural map generation, city combat/capture, authentication, multiplayer networking, or persistence UI.
 
 ## Continuous Integration
 
@@ -89,7 +89,7 @@ FastAPI and Uvicorn are confined to the application boundary.
 
 ### Browser controls
 
-1. **New Demo Game** creates the deterministic pre-game state. **Start Game**
+1. **New Demo Game · Hot-seat** or **Human vs AI Demo** creates the pre-game state. **Start Game**
    begins Amber League (faction A). Azure Union (faction B) acts next.
 2. Click a unit sprite or its roster button. Click another terrain tile to attempt
    movement. Python validates the path and remaining movement; errors appear
@@ -102,7 +102,8 @@ FastAPI and Uvicorn are confined to the application boundary.
    faction. Available choices and costs come from Python. Stored production and
    science remain when changing targets.
 5. **End Turn** resolves the current faction's economy and advances one activation.
-   Manually control the newly active faction, then repeat. The global turn begins
+   Hot-seat passes control to the next faction; Human vs AI runs the opponent and
+   returns to your next turn. The global turn begins
    at 0 and increments after both factions act. Production/research complete at
    activation end; completed targets clear and need a new choice.
 
@@ -119,6 +120,37 @@ in titles/details), and no animations, path preview, fog, city combat, or victor
 screen. Water/mountains remain impassable under the existing engine rules.
 
 ## Play the deterministic demo
+
+For an autonomous opponent, choose **Human vs AI Demo**, then **Start Game**.
+You control Amber (A); the heuristic controls Azure (B). Found your first city,
+choose production and research, move or attack, then press **End Turn**. The
+backend completes B's activation synchronously and returns to your next turn.
+Controls disable and **AI turn...** appears while the request is pending.
+The map updates once with the final result. **New Demo Game · Hot-seat** (or
+**Reset Demo · Hot-seat**) keeps both factions manually controlled. Choosing either
+scenario replaces the current match. Both use the existing local startup commands.
+
+The AI founds cities, researches Archery then Bronze Working, builds a small
+military before another Settler, defends against nearby superior forces, and
+moves/fights toward enemy cities. It stops nearby because city combat and victory
+conditions do not exist yet. All AI actions use existing commands, without network
+services. Its latest plan and command sequence appear in the optional
+`aiActivations` field returned by `/api/game`; these traces are not saved in v8
+snapshots. See [AI architecture](docs/architecture.md#deterministic-heuristic-ai).
+
+Run a reproducible headless heuristic-vs-heuristic game from the repository root:
+
+```powershell
+.venv\Scripts\python.exe -m aig.ai.simulate --turns 100
+```
+
+This validates state after every activation and prints command counts, technologies,
+and final snapshot/trace hashes. The 100-turn smoke run completes 200 activations,
+founds 3 cities, creates 20 units including the 4 starting units, moves 94 times,
+attacks 20 times, and researches Archery and Bronze Working for both factions.
+Repeated runs produce identical hashes. Verification for this slice: **499 Python
+tests, 26 frontend tests**, and the frontend build. Snapshot schema remains **v8**;
+the inspected baseline was 419 Python tests and 20 frontend tests.
 
 `demo_game_setup()` supplies a fixed 12 by 10 square-grid map with grassland,
 plains, forest, hills, mountains and water. Both factions use manual human
@@ -170,7 +202,7 @@ schema versions are rejected, with no implicit migration.
 
 See [setup/start](docs/architecture.md#deterministic-game-setup-and-start) and
 [research rules](docs/architecture.md#tiny-ancient-era-research). The backend is
-used by the browser through the thin application API; AI remains future work.
+used by the browser and the command-driven heuristic AI through the application layer.
 
 ## Lower-level backend examples
 
@@ -329,6 +361,8 @@ overrides. Normal development requires no local file.
 
 | Environment / `.env` name | Committed default |
 | --- | --- |
+| `AIG_AI_REPLAN_INTERVAL` | `5` global turns |
+| `AIG_AI_MAX_ACTIONS` | `256` commands per AI activation |
 | `AIG_OLLAMA_BASE_URL` | `http://10.0.0.250:11434` |
 | `AIG_OLLAMA_MODEL` | `hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF:Q4_K_M` |
 | `AIG_OLLAMA_CONTEXT_SIZE` | `4096` |
@@ -375,7 +409,13 @@ working directory. For another installation/location, supply
 for isolated tests. Each call reads fresh settings without changing `os.environ`.
 Keep the returned object and pass its Ollama settings to the future provider.
 Application settings are separate from per-game `GameConfig` and snapshots.
-Ollama calls and the strategy provider remain future work.
+Ollama calls and OllamaStrategyProvider remain future work. The heuristic provider is local.
+
+The two `AIG_AI_*` settings are positive integers. Plans are reused until the
+interval expires or their target becomes invalid. The command limit includes
+`EndActivation`; exceeding it raises a development error rather than hanging.
+Applied commands remain committed if an unexpected AI error occurs. These are
+application controls and do not alter engine rules or snapshot contents.
 
 ## Roadmap
 

@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from threading import RLock
 
-from aig.ai import AiOrchestrator, StrategyProvider
+from aig.ai import AiActivationResult, AiOrchestrator, StrategyProvider
 from aig.commands import Command, FoundCity, apply_command
 from aig.public_state import public_state
 from aig.scenarios import demo_game_setup, human_vs_ai_demo_setup
@@ -91,7 +91,7 @@ class GameSession:
             self.ai.advance_until_human(self._require_game())
             return self._public_state()
 
-    def run_active_ai_activation(self):
+    def run_active_ai_activation(self) -> AiActivationResult | None:
         with self._lock:
             return self.ai.run_active_ai_activation(self._require_game())
 

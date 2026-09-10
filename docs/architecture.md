@@ -14,8 +14,127 @@ Engine commands / public query model
 The browser never mutates engine state directly and never performs pathfinding,
 combat, economy, production-unlock, or research-prerequisite rules. It never
 contacts Ollama or any other external service. Each action waits for a returned
-authoritative state before rendering. AI, heuristic controllers, and LLM strategy
-remain future work. No HTTP imports were added to engine modules.
+authoritative state before rendering. A conventional heuristic AI now uses the
+same command boundary. LLM strategy remains future work. No HTTP imports were
+added to engine modules.
+
+## Deterministic heuristic AI
+
+```text
+GameState
+    -> StrategicStateBuilder
+    -> StrategyProvider (currently HeuristicStrategyProvider)
+    -> StrategicPlan
+    -> deterministic AI Executor
+    -> existing command boundary (apply_command)
+    -> deterministic GameState
+```
+
+`ai/strategy.py` separates strategic intent from tactical execution. The provider
+protocol is `create_plan(state: StrategicState, previous_plan: StrategicPlan | None
+= None) -> StrategicPlan`. Providers receive a detached, compressed view, never
+the mutable engine. A future `OllamaStrategyProvider` will implement this same
+interface; the executor has no provider, HTTP, prompt, retry, or model dependency.
+This slice contains only `HeuristicStrategyProvider` and no Ollama integration.
+
+`StrategicState` is a TypedDict made exclusively of ordinary JSON dictionaries,
+lists, strings, integers, and nulls. It includes player ID, global turn, gold,
+stored science, population-derived science income, current/known/available
+research, unlocked production choices, own/enemy cities (IDs, owners, coordinates,
+population, production) and units (IDs, owners, type, coordinates, HP, approximate
+strength). It omits terrain grids, snapshots, configuration and engine objects.
+There is no fog, so all live opponents are visible. Approximate military strength
+is the sum of `max(melee strength, ranged strength) * HP // 100`; Settlers add zero.
+This estimate is for strategy only, never a replacement for combat damage rules.
+
+`StrategicPlan` is a small frozen, validated dataclass: `posture`
+(`expand`, `defend`, `attack`), optional `primary_enemy_id` and `target_city_id`,
+`expansion_priority` (`high`, `low`), ordered `production_priority` unit types,
+and ordered `research_priority` technologies. `to_dict()` emits JSON data. There
+is no strategy language or reasoning field. Priorities can include locked choices;
+the executor filters them through engine queries at execution time.
+
+The heuristic expands when cityless with a Settler, defends when nearby enemy
+strength exceeds twice nearby friendly strength, and attacks with at least two
+combat units and an enemy city. Local means within Chebyshev distance 3 of an own
+city (or own unit if cityless); friendly strength is measured near those threats.
+Otherwise it expands. The target is the nearest enemy city to any own city, or
+own unit when cityless, breaking ties by city ID. Without enemy cities it selects
+the nearest enemy unit's faction. Fewer than two combat units prioritizes Warrior,
+Archer, Spearman; adequate forces with fewer than two cities prioritizes Settler,
+Archer, Spearman, Warrior; otherwise Archer, Spearman, Warrior. Research prefers
+Archery, Bronze Working, then Agriculture for nonstandard technology-free setups.
+
+`ai/executor.py` receives only state and plan. It selects research, gives existing
+cities production orders, handles Settlers, supplies production to newly founded
+cities, handles combat units, then issues exactly one `EndActivation`. All gameplay
+mutations use `apply_command` with `SetResearch`, `SetCityProduction`, `FoundCity`,
+`MoveUnit`, `AttackUnit`, and `EndActivation`. No direct entity writes or private
+rule execution occur in AI code. Normal engine validation is always authoritative.
+
+Settlers found on their current legal tile first. Otherwise candidates are ordered
+by distance, descending radius-1 total terrain food, descending production, then
+y/x, taking the first reachable legal site. Existing `find_path` handles obstacles;
+the unit travels only its remaining movement and may found next activation.
+`cities.validate_founding_site` / `can_found_city_at` share ownership, terrain,
+occupancy and minimum-spacing checks with actual founding. There is no duplicate
+AI founding rule. Exhausted or trapped Settlers wait. AI city IDs derive from the
+consumed unit's stable ID with a collision suffix; names are simple faction
+settlement numbers. Human allocation remains `city-N`.
+
+Production uses unlocked choices only, preserves ongoing builds, and switches
+away from a Settler when fewer than two combat units remain. It commissions at
+most one Settler at a time, only for high expansion priority, fewer than two
+cities, adequate military and an available legal site. Existing Settlers continue
+their founding task regardless of posture. A legal site may still be unreachable;
+such a Settler waits rather than attempting illegal movement. Research selects
+the first currently available priority; it changes an existing target only when
+the plan ranks another available choice higher. Completed research is excluded.
+
+Each combat unit checks `combat.preview_attack`, the same read-only legality and
+damage calculation used by `attack_unit`. Attacks prefer lethal outcomes, then
+lowest target HP, then target ID. Archers naturally use ranged combat. Without
+an attack, expanding/defending units protect their nearest city and engage nearby
+threats; attacking units approach the target city or enemy units. Reachable
+holding/firing positions are ordered by distance from the unit, distance from
+the goal, then y/x. Units stop within attack range and never try to enter an enemy
+city. City combat/capture and victory remain unimplemented.
+
+Entity actions run by ascending ID. Strategic arrays and technologies are sorted;
+candidate choices have explicit distance/HP/coordinate/ID ties. Pathfinding retains
+the engine's N, NE, E, SE, S, SW, W, NW BFS ordering. Integer sums and counts are
+order-independent. There are no random choices or timing-based IDs.
+
+`ai/controller.py` keeps an `AiController` per player with previous plan and
+creation turn. Replanning happens when absent, after the configured global-turn
+interval (default 5), or immediately if the target city disappears/changes owner
+or the primary enemy disappears/is eliminated. A backwards turn also resets the
+plan. Replanning passes the previous plan to the provider. Tactics and available
+choices are checked against current state every activation even with a reused plan.
+Reset discards controllers and traces. They are not persisted in snapshot v8.
+
+`AiOrchestrator.run_active_ai_activation` returns None on human, pre-game or
+terminal states. `advance_until_human` handles consecutive AI factions, stops at
+the next human/terminal state, and bounds traversal by the roster length. It rejects
+an active all-AI roster before mutation; headless callers explicitly iterate single
+activations. `AiExecutor` limits each activation to 256 commands including EndActivation.
+Exhaustion raises `AiActionLimitError` rather than silently passing or hanging.
+Already applied commands remain committed; this is a development failure, not
+an atomic activation rollback. Unexpected AI failures are HTTP 500 errors, never
+misreported as rejected human commands. The existing Refresh exposes current state.
+
+`AiActivationResult` records player ID, selected plan and ordered immutable command
+objects, with JSON conversion for inspection. The session's optional `aiActivations`
+field contains the latest successful batch of AI results; GET retains that batch
+until another AI activation or reset. Logs contain decisions and commands, not
+hidden reasoning. They never enter persistent snapshots or the normal engine DTO.
+
+`python -m aig.ai.simulate --turns 100` runs both demo factions as explicit AI
+controllers, validates after every activation and reports command counts and SHA-256
+hashes of the final snapshot and full plan/command trace. Tests run it twice and
+require exact equality, founding/production/research/movement/combat and 200
+completed activations. Separate replay tests reconstruct an activation from its
+commands and verify that no state changes occur outside the command boundary.
 
 ## Single-game application and HTTP contract
 
@@ -35,6 +154,7 @@ lock is held. Game rules and atomic rejection remain responsibilities of existin
 | --- | --- |
 | `GET /api/game` | Current public state; 404 `no_game` before creation |
 | `POST /api/game/demo` | Replace the game using `create_game(demo_game_setup())`; return pre-game state |
+| `POST /api/game/demo/ai` | Same deterministic map with human A and AI B; return pre-game state |
 | `POST /api/game/start` | Call the real `start_game`; return started state; repeated start is 409 |
 | `POST /api/game/commands` | Validate a discriminated JSON payload, construct an immutable command, apply it, and return state |
 
@@ -43,6 +163,14 @@ ID. The service reads `active_player_id` inside the same lock as command executi
 the command layer still checks the actor and entity ownership. Extra fields,
 unknown commands, invalid enums, missing fields, and non-integer coordinates
 (including booleans) are rejected. `EliminatePlayer` is not exposed.
+
+Browser commands require an active human controller. Start and successful human
+commands synchronously run `advance_until_human` under the same lock before returning
+the final public state. Hot-seat still advances one activation. Human vs AI End Turn
+runs B and returns to A on the next global turn. Both scenarios are selectable in
+the welcome screen and session footer. While that request is pending the UI says
+`AI turn...` and disables all gameplay controls; it renders only the final response
+and clears selections across turns even when the active player ID is unchanged.
 
 | `type` | Other JSON fields | Engine command |
 | --- | --- | --- |
@@ -79,7 +207,7 @@ ordered: players/units/cities by ID, tiles by y then x, choices in engine enum o
 
 | Object | Fields |
 | --- | --- |
-| `game` | `turn`, `activePlayerId`, `status` (`pre_game` or `started` for this demo) |
+| `game` | `turn`, `activePlayerId`, `status` (`pre_game`, `started`, `terminal`) |
 | `players[]` | `id`, `controller`, `eliminated`, `gold`, `scienceStored`, `researchTarget`, `researchedTechnologies`, `availableResearch: [{technology, cost}]`, `researchCost`, `researchRemaining` |
 | `map` | `width`, `height`, `origin: {x, y}`, `tiles: [{x, y, terrain, ownerId}]` |
 | `units[]` | `id`, `ownerId`, `type`, `x`, `y`, `hp`, `movesRemaining`, `maxMovement`, `attackRange` |
@@ -87,8 +215,8 @@ ordered: players/units/cities by ID, tiles by y then x, choices in engine enum o
 
 Costs, remaining amounts, available technologies, unit unlocks, movement allowances,
 and attack ranges come from engine queries or enum properties. The client does not
-contain duplicate stat tables. Terminal/conquest UI semantics remain outside this
-demo: no HTTP command eliminates a faction and unit deaths do not eliminate it.
+contain duplicate stat tables. Terminal state is exposed for application callers; no HTTP command eliminates a
+faction and unit deaths do not eliminate it. Conquest remains outside this demo.
 
 ## Browser implementation
 
@@ -131,7 +259,7 @@ install/build/unittest sequence and adds the test extra plus `npm test`.
 
 `backend/aig/settings.py` owns frozen `Settings` and `OllamaSettings` dataclasses,
 committed development defaults, and the explicit `load_settings()` boundary.
-For each `AIG_OLLAMA_*` value, a non-empty process environment override takes
+For each `AIG_OLLAMA_*` or `AIG_AI_*` value, a non-empty process environment override takes
 priority over the optional root `.env`, which takes priority over the Python
 default. `.env` is ignored; `.env.example` documents all supported names. See the
 [settings guide](../README.md#application-settings) for defaults, parsing, and use.
@@ -146,11 +274,12 @@ Unlike the reference's individual environment getters, empty process strings
 consistently fall through, and invalid boolean spellings fail explicitly.
 
 The API factory calls `load_settings()` once per application instance. It creates
-no provider and makes no Ollama calls. A future provider would receive `settings.ollama`.
+only the heuristic provider and makes no Ollama calls. A future provider would receive `settings.ollama`.
 The deterministic engine does not read application settings; `GameConfig` remains
 per-game state and application settings are not serialized in snapshots. This
-layer adds no network calls, provider implementation, gameplay options, or runtime
-dependencies. `tests/test_settings.py` uses temporary files and isolated
+layer adds no network calls or runtime dependencies. Frozen `AiSettings` supplies
+`AIG_AI_REPLAN_INTERVAL=5` and `AIG_AI_MAX_ACTIONS=256`, both positive integers,
+to session orchestration. `tests/test_settings.py` uses temporary files and isolated
 environment mappings to verify defaults, precedence, parsing, and immutability.
 
 ## Authoritative state and snapshots
@@ -217,7 +346,7 @@ StrategyProvider / Human UI
      GameState rules
 ```
 
-`backend/aig/commands.py` provides frozen dataclasses `EndActivation(actor_id)`, `EliminatePlayer(actor_id, target_player_id)`, `MoveUnit(actor_id, unit_id, destination: Position)`, `AttackUnit(actor_id, attacker_unit_id, target_unit_id)`, `FoundCity(actor_id, settler_unit_id, city_id, city_name)`, `SetCityProduction(actor_id, city_id, unit_type: UnitType | None)` and `SetResearch(actor_id, technology: Technology | None)`, their `Command` union, and `apply_command(state, command)`. IDs must be non-empty strings. Future human UI, heuristic AI, and Ollama-backed controllers should produce these requests instead of directly assigning authoritative state. State fields remain mutable and rules APIs remain usable internally for setup and execution.
+`backend/aig/commands.py` provides frozen dataclasses `EndActivation(actor_id)`, `EliminatePlayer(actor_id, target_player_id)`, `MoveUnit(actor_id, unit_id, destination: Position)`, `AttackUnit(actor_id, attacker_unit_id, target_unit_id)`, `FoundCity(actor_id, settler_unit_id, city_id, city_name)`, `SetCityProduction(actor_id, city_id, unit_type: UnitType | None)` and `SetResearch(actor_id, technology: Technology | None)`, their `Command` union, and `apply_command(state, command)`. IDs must be non-empty strings. The human UI and heuristic AI produce these requests; future Ollama-directed controllers must use them instead of directly assigning authoritative state. State fields remain mutable and rules APIs remain usable internally for setup and execution.
 
 Execution validates state and accepts only supported command types. The actor must exist, must not be eliminated, and must be the current active faction, regardless of controller type. All commands are rejected in pre-game states with no activation and in terminal games. Actor validation always precedes the requested state operation, including a repeated target elimination.
 
@@ -286,7 +415,7 @@ player actions (including FoundCity and SetCityProduction)
 
 A newly founded city exists immediately at population 1 with zero stores and participates when its owner ends that same activation. Owners with no cities collect nothing. Invalid `EndActivation` requests cause no economic mutation. Economy is not attached to `finish_activation()` or `_begin_activation()`: active-player elimination removes its cities/units and selects/refills the successor without collecting for either faction or double-advancing. Snapshot loading only restores exact mid-activation values, even when stored food already exceeds a growth threshold.
 
-There are no resources, improvements, rivers, roads, terrain variants, manual citizens, culture borders, culture, faith, housing or happiness in this slice. The browser exposes the existing economy; AI remains future work.
+There are no resources, improvements, rivers, roads, terrain variants, manual citizens, culture borders, culture, faith, housing or happiness in this slice. The browser and heuristic AI use the existing economy through commands.
 
 ## City production targets and unit construction
 
@@ -332,7 +461,7 @@ Friendly units may stack without a limit: a unit may pass through and stop on fr
 
 The implementation uses breadth-first search because all edges cost 1. Neighbors are always visited in **N, NE, E, SE, S, SW, W, NW** order. A FIFO queue and first-visit predecessor links choose a stable shortest path; dictionary/set iteration never chooses neighbors. Every entered tile is checked for bounds, terrain, hostile units and enemy cities through `GameState.can_enter()`. Future variable costs can replace this isolated BFS with Dijkstra/A* without changing destination-based command intent.
 
-Pathfinding is deterministic executor infrastructure, not controller strategy. A future UI, heuristic controller or LLM-directed executor can reuse it without supplying every intermediate tile. It contains no AI/LLM logic, combat resolution, zones of control, fog, borders or roads. City occupancy is an entry restriction, without city combat or capture.
+Pathfinding is deterministic executor infrastructure, not controller strategy. The UI and heuristic executor reuse it, and a future LLM-directed executor can do so without supplying every intermediate tile. It contains no AI/LLM logic, combat resolution, zones of control, fog, borders or roads. City occupancy is an entry restriction, without city combat or capture.
 
 ## Deterministic unit combat
 
@@ -362,7 +491,7 @@ Settlers cannot attack. As a temporary MVP rule, any valid enemy attack destroys
 
 Resolution is atomic at the synchronous rules/command boundary. State and actor validation precede attacker ownership, target, attack capability, movement and range checks. All checks finish before mutation. The executor computes both damages, resulting HP/deaths, spent movement and any advance from the pre-combat state, then commits only assignments/removals with no further fallible rules, callbacks or intermediate events. Invalid commands leave the entire supplied state unchanged. Like movement, the internal executor validates game rules while actor authorization remains in `apply_command()`; controllers must use that boundary.
 
-The economy and production slices implement terrain yields, automatic working, food/growth, generic production storage, single-target unit construction and gold income. Research and explicit game setup/start complete the first-playable backend milestone, now exposed through the browser application without extra game rules. Buildings, repeat production, purchases, maintenance and AI remain outside this slice. Later conquest work must define capture/destruction and automatic elimination while preserving the single-successor activation transition. Infrastructure `EliminatePlayer` is not exposed to the browser. Decide a rules-version compatibility policy before changing static stats independently of the snapshot shape.
+The economy and production slices implement terrain yields, automatic working, food/growth, generic production storage, single-target unit construction and gold income. Research and explicit game setup/start complete the first-playable backend milestone, now exposed through the browser application without extra game rules. Buildings, engine-level repeat production, purchases and maintenance remain outside this slice; the AI issues fresh production commands after completion. Later conquest work must define capture/destruction and automatic elimination while preserving the single-successor activation transition. Infrastructure `EliminatePlayer` is not exposed to the browser. Decide a rules-version compatibility policy before changing static stats independently of the snapshot shape.
 
 
 ## Tiny Ancient-era research
@@ -473,9 +602,9 @@ elimination/terminal semantics continue to apply.
 
 `scenarios.demo_game_setup()` is the committed, hand-authored 12 by 10
 square-grid demo. Literal rows fix all six terrain types, obstacles and land
-routes. A starts at (2, 2), B at (9, 7), both using `ControllerType.HUMAN` until
-actual AI exists. Starts permit immediate `FoundCity` through real Settler rules.
+routes. A starts at (2, 2), B at (9, 7), both using `ControllerType.HUMAN` for hot-seat play. Starts permit immediate `FoundCity` through real Settler rules.
 The scenario remains stable unless its source is intentionally revised. There
-is no procedural generation, server, UI, AI provider or autonomous loop here.
+is no procedural generation. `human_vs_ai_demo_setup()` reuses the same map and
+starts while changing only B to `ControllerType.AI`; A begins as the active human.
 `tests/test_setup.py` exercises a complete two-faction opening, research/unit
 completion, deterministic snapshots, and every README Python example.
