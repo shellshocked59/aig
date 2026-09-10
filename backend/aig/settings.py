@@ -13,7 +13,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class OllamaSettings:
-    """Committed development defaults for the future Ollama provider."""
+    """Committed development defaults for local strategic planning."""
 
     base_url: str = "http://10.0.0.250:11434"
     model: str = "hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF:Q4_K_M"
@@ -24,6 +24,13 @@ class OllamaSettings:
     keep_alive: str = "10m"
     think: bool = False
     stream: bool = False
+    timeout_seconds: float = 20.0
+
+    def __post_init__(self) -> None:
+        if (isinstance(self.timeout_seconds, bool)
+                or not isinstance(self.timeout_seconds, (int, float))
+                or not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0):
+            raise ValueError("AIG_OLLAMA_TIMEOUT_SECONDS must be a finite positive number")
 
 
 @dataclass(frozen=True)

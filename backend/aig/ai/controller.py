@@ -1,10 +1,12 @@
 """Ephemeral plan reuse and activation orchestration, independent of HTTP."""
 
-from dataclasses import dataclass
+from collections import deque
+from copy import deepcopy
+from dataclasses import dataclass, field
 
 from aig.ai.executor import AiActivationResult, AiExecutor
 from aig.ai.strategy import (
-    HeuristicStrategyProvider, StrategicPlan, StrategicStateBuilder, StrategyProvider,
+    HeuristicStrategyProvider, StrategicPlan, StrategicStateBuilder, StrategyProvider, StrategyProviderError,
 )
 from aig.state import ControllerType, GameState, _integer
 
@@ -15,6 +17,8 @@ class AiController:
     replan_interval: int = 5
     previous_plan: StrategicPlan | None = None
     plan_creation_turn: int | None = None
+    last_trace: dict | None = field(default=None, init=False)
+    summary: dict = field(default_factory=dict, init=False)
 
     def __post_init__(self) -> None:
         _integer(self.replan_interval, "replan_interval", minimum=1)
@@ -30,14 +34,45 @@ class AiController:
                 or (plan.target_city_id is not None and (
                     city is None or city.owner_id == player_id
                     or (plan.primary_enemy_id is not None and city.owner_id != plan.primary_enemy_id))))
-        if (plan is None or invalid or self.plan_creation_turn is None
-                or state.turn < self.plan_creation_turn
-                or state.turn - self.plan_creation_turn >= self.replan_interval):
-            plan = self.provider.create_plan(StrategicStateBuilder().build(state, player_id), plan)
+        age = None if self.plan_creation_turn is None else state.turn - self.plan_creation_turn
+        reason = ("missing_plan" if plan is None else "invalid_target" if invalid else
+                  "missing_creation_turn" if age is None else "turn_rewound" if age < 0 else
+                  "expired" if age >= self.replan_interval else None)
+        self.last_trace = None
+        if reason is not None:
+            strategic_state = StrategicStateBuilder().build(state, player_id)
+            requested = getattr(self.provider, "name", type(self.provider).__name__)
+            actual, fallback, failure = requested, False, None
+            previous = plan
+            try:
+                plan = self.provider.create_plan(strategic_state, previous)
+            except StrategyProviderError as error:
+                failure = str(error)
+                plan = HeuristicStrategyProvider().create_plan(strategic_state, previous)
+                actual, fallback = "heuristic", True
             if not isinstance(plan, StrategicPlan):
                 raise ValueError("strategy provider must return a StrategicPlan")
+            trace = deepcopy(getattr(self.provider, "last_trace", None)) or {}
+            trace.update(game_seed=state.config.seed, turn=state.turn, player_id=player_id,
+                         strategic_state=deepcopy(strategic_state),
+                         previous_plan=previous.to_dict() if previous else None,
+                         resulting_plan=plan.to_dict(), requested_provider=requested,
+                         actual_provider=actual, fallback_used=fallback,
+                         replan_reason=reason, plan_age_turns=age)
+            if failure:
+                trace["error"] = failure
+            self.last_trace = trace
+            self.summary = dict(requestedProvider=requested, actualProvider=actual,
+                                fallbackUsed=fallback, model=trace.get("model"),
+                                durationSeconds=trace.get("wall_clock_seconds"),
+                                retryCount=trace.get("retry_count", 0))
             self.previous_plan = plan
             self.plan_creation_turn = state.turn
+        self.summary.update(planReused=reason is None, replanReason=reason,
+                            planAgeTurns=state.turn - self.plan_creation_turn)
+        # Inference timing/retries describe this activation; provenance persists on reuse.
+        if reason is None:
+            self.summary.update(durationSeconds=0.0, retryCount=0)
         return plan
 
 
@@ -50,14 +85,25 @@ class AiOrchestrator:
         self.executor = AiExecutor(max_actions)
         self.controllers: dict[str, AiController] = {}
         self.latest_results: tuple[AiActivationResult, ...] = ()
+        self.latest_summaries: tuple[dict, ...] = ()
+        self._inference_traces: deque[dict] = deque(maxlen=64)
+
+    @property
+    def inference_traces(self) -> list[dict]:
+        """Detached backend debugging records; bounded and never part of snapshots."""
+        return deepcopy(list(self._inference_traces))
 
     def run_active_ai_activation(self, state: GameState) -> AiActivationResult | None:
         if state.active_controller is not ControllerType.AI:
             return None
         player_id = state.active_player_id
         controller = self.controllers.setdefault(player_id, AiController(self.provider, self.replan_interval))
-        result = self.executor.execute(state, controller.plan_for(state, player_id))
+        plan = controller.plan_for(state, player_id)
+        if controller.last_trace is not None:
+            self._inference_traces.append(deepcopy(controller.last_trace))
+        result = self.executor.execute(state, plan)
         self.latest_results = (result,)
+        self.latest_summaries = (deepcopy(controller.summary),)
         return result
 
     def advance_until_human(self, state: GameState) -> tuple[AiActivationResult, ...]:
@@ -65,14 +111,17 @@ class AiOrchestrator:
                 not p.eliminated and p.controller is ControllerType.HUMAN for p in state.players.values()):
             raise ValueError("advance_until_human requires a live human; use single activations for AI-only games")
         results = []
+        summaries = []
         # At most one pass through the live roster before reaching a human.
         for _ in range(len(state.turn_order)):
             result = self.run_active_ai_activation(state)
             if result is None:
                 break
             results.append(result)
+            summaries.append(self.latest_summaries[0])
         if state.active_controller is ControllerType.AI:
             raise RuntimeError("AI orchestration failed to reach a human within the roster")
         if results:
             self.latest_results = tuple(results)
+            self.latest_summaries = tuple(summaries)
         return tuple(results)

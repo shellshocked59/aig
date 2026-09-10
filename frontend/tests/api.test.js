@@ -13,6 +13,7 @@ test('client sends explicit payloads to relative API routes, without actor or al
     ['getGame', [], '', undefined, 'GET'],
     ['createDemoGame', [], '/demo'], ['startGame', [], '/start'],
     ['createAiDemoGame', [], '/demo/ai'],
+    ['createLlmDemoGame', [], '/demo/llm'],
     ['moveUnit', ['u1', 2, 3], '/commands', { type: 'move_unit', unitId: 'u1', x: 2, y: 3 }],
     ['attackUnit', ['u1', 'u2'], '/commands', { type: 'attack_unit', attackerUnitId: 'u1', targetUnitId: 'u2' }],
     ['foundCity', ['u1', 'City'], '/commands', { type: 'found_city', settlerUnitId: 'u1', name: 'City' }],

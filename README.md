@@ -12,7 +12,7 @@ Investigate whether an LLM can serve as a high-level strategy provider while con
 
 ## Architecture Direction
 
-The browser uses plain JavaScript, HTML, CSS, and esbuild. A thin FastAPI application exposes the deterministic Python engine through HTTP/JSON. The browser talks only to the Python API; all gameplay rules remain in the independently usable engine. A deterministic heuristic opponent is available; Ollama integration remains future work. See [architecture notes](docs/architecture.md).
+The browser uses plain JavaScript, HTML, CSS, and esbuild. A thin FastAPI application exposes the deterministic Python engine through HTTP/JSON. The browser talks only to the Python API; all gameplay rules remain in the independently usable engine. Heuristic and local Ollama strategic providers share the same deterministic executor. See [architecture notes](docs/architecture.md).
 
 ```text
 frontend/src/      Browser UI, API client, styles, and original local sprite atlas
@@ -27,7 +27,7 @@ dist/             Generated browser-ready output (not committed)
 
 ## Current Status
 
-Prototype 0.0.1 is manually playable in the browser: create/start the fixed two-faction demo, found cities, move and fight with units, choose production and research, then continue hot-seat play or face the conventional heuristic AI in Human vs AI Demo. The sprite map has six terrain types, five unit types, and city labels. The engine retains snapshot schema v8 and all existing rules. There is no Ollama access, procedural map generation, city combat/capture, authentication, multiplayer networking, or persistence UI.
+Prototype 0.0.1 is manually playable in the browser: create/start the fixed two-faction demo, found cities, move and fight with units, choose production and research, then continue hot-seat play or face the conventional heuristic AI in Human vs Heuristic AI. The sprite map has six terrain types, five unit types, and city labels. The engine retains snapshot schema v8 and all existing rules. Human vs LLM adds local Ollama planning. There is no procedural map generation, city combat/capture, authentication, multiplayer networking, or persistence UI.
 
 ## Continuous Integration
 
@@ -45,6 +45,9 @@ python -m unittest discover -s tests -v
 Any failed command fails the job. New runs cancel older runs for the same branch or pull request. No repository secrets, `.env` file, or Ollama service are required. Production deployment remains future work.
 
 ## Running Locally
+
+For Laragon on Windows, see [the Laragon setup](docs/laragon.md): Apache serves
+`dist/` at `http://aig.localhost` and forwards API requests to Python.
 
 Install Python 3.11+ and Node.js 22+. Run these commands from the repository root.
 
@@ -89,7 +92,7 @@ FastAPI and Uvicorn are confined to the application boundary.
 
 ### Browser controls
 
-1. **New Demo Game · Hot-seat** or **Human vs AI Demo** creates the pre-game state. **Start Game**
+1. **New Demo Game · Hot-seat** or **Human vs Heuristic AI** creates the pre-game state. **Start Game**
    begins Amber League (faction A). Azure Union (faction B) acts next.
 2. Click a unit sprite or its roster button. Click another terrain tile to attempt
    movement. Python validates the path and remaining movement; errors appear
@@ -121,22 +124,58 @@ screen. Water/mountains remain impassable under the existing engine rules.
 
 ## Play the deterministic demo
 
-For an autonomous opponent, choose **Human vs AI Demo**, then **Start Game**.
+For an autonomous opponent, choose **Human vs Heuristic AI**, then **Start Game**.
 You control Amber (A); the heuristic controls Azure (B). Found your first city,
 choose production and research, move or attack, then press **End Turn**. The
 backend completes B's activation synchronously and returns to your next turn.
 Controls disable and **AI turn...** appears while the request is pending.
 The map updates once with the final result. **New Demo Game · Hot-seat** (or
-**Reset Demo · Hot-seat**) keeps both factions manually controlled. Choosing either
-scenario replaces the current match. Both use the existing local startup commands.
+**Reset Demo · Hot-seat**) keeps both factions manually controlled. Choosing any
+scenario replaces the current match. All modes use the existing local startup commands.
 
 The AI founds cities, researches Archery then Bronze Working, builds a small
 military before another Settler, defends against nearby superior forces, and
 moves/fights toward enemy cities. It stops nearby because city combat and victory
-conditions do not exist yet. All AI actions use existing commands, without network
-services. Its latest plan and command sequence appear in the optional
+conditions do not exist yet. All AI actions use existing commands. Heuristic
+mode needs no network services. Its latest plan and command sequence appear in the optional
 `aiActivations` field returned by `/api/game`; these traces are not saved in v8
 snapshots. See [AI architecture](docs/architecture.md#deterministic-heuristic-ai).
+
+Choose **Human vs LLM** for the same game with Qwen providing only strategic
+plans for Azure (B). Python contacts the configured Ollama server; the browser
+continues using only `/api/...`. The default model is
+`hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF:Q4_K_M` at
+`http://10.0.0.250:11434`, intentionally using a 4096-token context.
+Ollama is optional: **Hot-seat** and **Human vs Heuristic AI** remain available.
+
+Plans use JSON Schema plus local validation. Invalid output gets one repair
+attempt; network failures or exhausted repairs fall back to the heuristic.
+The default HTTP timeout is 20 seconds per request. A repair can add another
+request. Plans remain reusable for five global turns, including fallback plans.
+Keep `AIG_OLLAMA_THINK=false` and `AIG_OLLAMA_STREAM=false`; the provider rejects
+configurations enabling either. The timeout must be finite and positive.
+
+The optional `aiActivations` response includes `requestedProvider`,
+`actualProvider`, `fallbackUsed`, `model`, `durationSeconds`, `retryCount`,
+`planReused`, `replanReason`, `planAgeTurns`, the plan and executed commands.
+`aiProviders` explicitly maps AI player IDs to the selected provider, independent
+of display names. Detailed, detached traces are available in Python through
+`session.ai.inference_traces` (latest 64 replans), never in the ordinary HUD or
+snapshots. On reuse, duration/retries are zero while plan provider/fallback
+provenance remains visible.
+
+Opt-in live checks, excluded from CI and normal tests:
+
+```powershell
+.venv\Scripts\python.exe -m aig.ai.ollama_smoke
+.venv\Scripts\python.exe -m aig.ai.ollama_smoke --turns 10
+```
+
+The first validates one plan without mutating a game. The second validates each
+activation of a disposable heuristic-A versus Ollama-B match and reports replans,
+reuse, timings, retries and fallbacks. Exit status is nonzero for planning failure
+or any simulation fallback. Both load normal environment and `.env` settings.
+See the [provider implementation and validation report](docs/ollama-provider.md).
 
 Run a reproducible headless heuristic-vs-heuristic game from the repository root:
 
@@ -148,9 +187,10 @@ This validates state after every activation and prints command counts, technolog
 and final snapshot/trace hashes. The 100-turn smoke run completes 200 activations,
 founds 3 cities, creates 20 units including the 4 starting units, moves 94 times,
 attacks 20 times, and researches Archery and Bronze Working for both factions.
-Repeated runs produce identical hashes. Verification for this slice: **499 Python
-tests, 26 frontend tests**, and the frontend build. Snapshot schema remains **v8**;
-the inspected baseline was 419 Python tests and 20 frontend tests.
+Repeated runs produce identical hashes, also matching the original heuristic
+controller before Ollama integration. Verification for this slice: **531 Python
+tests, 27 frontend tests**, and the frontend build. Snapshot schema remains **v8**;
+the inspected baseline was 499 Python tests and 26 frontend tests.
 
 `demo_game_setup()` supplies a fixed 12 by 10 square-grid map with grassland,
 plains, forest, hills, mountains and water. Both factions use manual human
@@ -344,7 +384,7 @@ Produced units stack with friendly units on the city center. The existing collis
 ## Application settings
 
 `backend/aig/settings.py` defines immutable `Settings` / `OllamaSettings` objects
-and the committed defaults for the future Ollama strategy provider. Load them
+and the committed defaults for the Ollama strategy provider. Load them
 explicitly when starting a caller or application:
 
 ```python
@@ -372,6 +412,7 @@ overrides. Normal development requires no local file.
 | `AIG_OLLAMA_KEEP_ALIVE` | `10m` |
 | `AIG_OLLAMA_THINK` | `false` |
 | `AIG_OLLAMA_STREAM` | `false` |
+| `AIG_OLLAMA_TIMEOUT_SECONDS` | `20.0` |
 
 The LAN address is an intentional, non-secret development default: by default,
 local development expects Ollama there, but any machine may override it.
@@ -407,9 +448,9 @@ working directory. For another installation/location, supply
 `load_settings(local_file=Path("/path/to/.env"))` using `pathlib.Path`.
 `local_file=None` disables local loading; `environ={}` ignores process variables
 for isolated tests. Each call reads fresh settings without changing `os.environ`.
-Keep the returned object and pass its Ollama settings to the future provider.
+Keep the returned object and pass its Ollama settings to `OllamaStrategyProvider(settings.ollama)`.
 Application settings are separate from per-game `GameConfig` and snapshots.
-Ollama calls and OllamaStrategyProvider remain future work. The heuristic provider is local.
+Ollama is optional: Hot-seat and Human vs Heuristic AI work without a model server.
 
 The two `AIG_AI_*` settings are positive integers. Plans are reused until the
 interval expires or their target becomes invalid. The command limit includes

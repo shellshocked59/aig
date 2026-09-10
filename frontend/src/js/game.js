@@ -18,6 +18,8 @@ export function mountGame(root, api) {
   const active = () => state?.players.find((p) => p.id === state.game.activePlayerId);
   const playing = () => state?.game.status === 'started' && active()?.controller !== 'ai';
   const versusAi = () => state?.players.some((p) => p.controller === 'ai');
+  const modeLabel = () => Object.values(state?.aiProviders || {}).includes('ollama')
+    ? 'Human vs LLM' : versusAi() ? 'Human vs Heuristic AI' : 'Hot-seat';
   const at = (piece, tile) => tile && piece.x === tile.x && piece.y === tile.y;
   const disabled = (condition = false) => busy || condition ? 'disabled' : '';
   const sprite = (className) => `<span aria-hidden="true" class="sprite ${className}"></span>`;
@@ -149,14 +151,14 @@ export function mountGame(root, api) {
   function render() {
     const focusId = root.contains(root.ownerDocument.activeElement) ? root.ownerDocument.activeElement?.id : null;
     const player = active();
-    root.innerHTML = `<header class="masthead"><div><p class="eyebrow">A small world. An unwritten history.</p><h1>Aether, Iron <span>&amp;</span> Glory</h1></div><span class="edition">Deterministic demo · ${versusAi() ? 'Human vs AI' : 'Hot-seat'}</span></header>
+    root.innerHTML = `<header class="masthead"><div><p class="eyebrow">A small world. An unwritten history.</p><h1>Aether, Iron <span>&amp;</span> Glory</h1></div><span class="edition">Deterministic demo · ${modeLabel()}</span></header>
       <div class="message-bar"><p role="${error ? 'alert' : 'status'}" class="${error ? 'error' : ''}">${esc(error || (busy ? busyMessage : notice || 'Two factions. One shared world.'))}</p><button class="quiet" data-action="refresh" ${disabled()}>Refresh</button></div>
-      ${!state ? `<section class="welcome"><div class="crest">AIG</div><p class="eyebrow">The first expedition</p><h2>A world ready to settle</h2><p>Lead two rival factions across a fixed world.<br>Found cities, raise armies, and take turns shaping their history.</p><button class="primary" data-action="demo" ${disabled()}>New Demo Game · Hot-seat</button><button class="primary" data-action="demo-ai" ${disabled()}>Human vs AI Demo</button><p class="hint">Play hot-seat with two people, command both sides, or face the heuristic AI.</p></section>` : `
+      ${!state ? `<section class="welcome"><div class="crest">AIG</div><p class="eyebrow">The first expedition</p><h2>A world ready to settle</h2><p>Lead two rival factions across a fixed world.<br>Found cities, raise armies, and take turns shaping their history.</p><button class="primary" data-action="demo" ${disabled()}>New Demo Game · Hot-seat</button><button class="primary" data-action="demo-ai" ${disabled()}>Human vs Heuristic AI</button><button class="quiet" data-action="demo-llm" ${disabled()}>Human vs LLM</button><p class="hint">Play hot-seat with two people, command both sides, or face heuristic or LLM strategy.</p></section>` : `
       <section class="hud ${faction(player?.id).className}" aria-label="Game status"><div class="turn"><small>Turn</small><strong>${state.game.turn}</strong></div><div class="active-faction"><small>${state.game.status === 'started' ? 'Active faction' : state.game.status === 'terminal' ? 'Game ended' : 'Awaiting your command'}</small><strong>${player ? esc(faction(player.id).name) : 'Demo ready'}</strong></div><div><small>Treasury</small><strong>${player?.gold ?? '—'} <span>gold</span></strong></div><div><small>Science · ${label(player?.researchTarget)}</small><strong>${player?.scienceStored ?? '—'}</strong></div><button class="primary" data-action="${playing() ? 'end' : 'start'}" ${disabled(state.game.status === 'terminal' || active()?.controller === 'ai')}>${state.game.status === 'terminal' ? 'Game ended' : active()?.controller === 'ai' ? 'AI turn...' : playing() ? 'End Turn' : 'Start Game'}</button></section>
       <div class="game-layout"><section class="world-frame" aria-label="Game board"><div class="world-heading"><h2>The known world</h2><span>${state.map.width} × ${state.map.height} · square grid</span></div>${renderMap()}<div class="world-footer"><span class="faction-a">A · Amber League</span><span class="faction-b">B · Azure Union</span><span>Click pieces to inspect · Esc clears</span></div></section>
       <aside aria-label="Orders and details">${state.game.status === 'pre_game' ? '<section class="panel"><h2>Prepare the expedition</h2><p>Amber acts first. Press Start Game to begin. Each faction starts with a Settler and a Warrior.</p></section>' : ''}${renderUnit()}${renderCity()}${renderResearch()}${renderTile()}</aside></div>
       <section class="forces" aria-label="Active faction forces"><h2>${player ? `${esc(faction(player.id).name)} · forces` : 'Expedition roster'}</h2><div>${state.units.filter((u) => !player || u.ownerId === player.id).map((u) => `<button class="roster-button ${faction(u.ownerId).className}" data-action="unit" data-id="${esc(u.id)}" aria-pressed="${u.id === selectedUnitId}" ${disabled()}>${sprite(unitSprites[u.type])}<span>${label(u.type)} <small>${esc(u.id)} · ${u.movesRemaining}/${u.maxMovement} moves · ${u.x}, ${u.y}</small></span></button>`).join('') || '<p class="hint">No remaining units. Select a city to choose production.</p>'}</div></section>
-      <footer class="session-footer"><span>${versusAi() ? 'Human vs AI' : 'Manual hot-seat'} · ${state.cities.length} cities · ${state.units.length} units</span><button class="quiet" data-action="demo" ${disabled()}>Reset Demo · Hot-seat</button><button class="quiet" data-action="demo-ai" ${disabled()}>Human vs AI Demo</button></footer>`}`;
+      <footer class="session-footer"><span>${modeLabel()} · ${state.cities.length} cities · ${state.units.length} units</span><button class="quiet" data-action="demo" ${disabled()}>Reset Demo · Hot-seat</button><button class="quiet" data-action="demo-ai" ${disabled()}>Human vs Heuristic AI</button><button class="quiet" data-action="demo-llm" ${disabled()}>Human vs LLM</button></footer>`}`;
     if (focusId) root.ownerDocument.getElementById(focusId)?.focus({ preventScroll: true });
   }
 
@@ -179,6 +181,7 @@ export function mountGame(root, api) {
     const { action, id } = button.dataset;
     if (action === 'demo') return run(async () => { const result = await api.createDemoGame(); clearSelection(); return result; }, 'A fresh expedition awaits. Press Start Game.');
     if (action === 'demo-ai') return run(async () => { const result = await api.createAiDemoGame(); clearSelection(); return result; }, 'Human vs AI ready. Press Start Game.');
+    if (action === 'demo-llm') return run(async () => { const result = await api.createLlmDemoGame(); clearSelection(); return result; }, 'Human vs LLM ready. Press Start Game.');
     if (action === 'refresh') return run(api.getGame);
     if (action === 'start') return run(api.startGame, 'Amber League takes the first activation.');
     if (action === 'end') return run(api.endActivation,

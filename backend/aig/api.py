@@ -62,10 +62,9 @@ CommandPayload = Annotated[
 
 def create_app() -> FastAPI:
     # Loading settings is explicit at startup, never in the engine or on requests.
-    # Ollama settings stay dormant; only the local heuristic provider is used.
     app = FastAPI(title="Aether, Iron & Glory", docs_url=None, redoc_url=None)
     app.state.settings = load_settings()
-    session = GameSession(app.state.settings.ai)
+    session = GameSession(app.state.settings.ai, ollama_settings=app.state.settings.ollama)
     app.state.session = session
 
     @app.exception_handler(ApplicationError)
@@ -98,6 +97,10 @@ def create_app() -> FastAPI:
     @app.post("/api/game/demo/ai")
     def create_ai_demo():
         return session.demo(versus_ai=True)
+
+    @app.post("/api/game/demo/llm")
+    def create_llm_demo():
+        return session.demo(versus_ai=True, provider="ollama")
 
     @app.post("/api/game/start")
     def start():

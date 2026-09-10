@@ -35,6 +35,7 @@ class SettingsTests(unittest.TestCase):
             "keep_alive": "10m",
             "think": False,
             "stream": False,
+            "timeout_seconds": 20.0,
         })
         self.assertIs(type(self.load().ollama.temperature), float)
 
@@ -62,6 +63,7 @@ class SettingsTests(unittest.TestCase):
             ("keep_alive", "5m", "0"),
             ("think", True, False),
             ("stream", True, False),
+            ("timeout_seconds", 12.5, 30.0),
         ]
         for field, local, environment in cases:
             with self.subTest(field=field):
@@ -107,6 +109,8 @@ class SettingsTests(unittest.TestCase):
             ("TEMPERATURE", "warm"), ("TEMPERATURE", "nan"),
             ("TEMPERATURE", "inf"), ("TEMPERATURE", "-0.1"),
             ("THINK", "maybe"), ("STREAM", "2"),
+            ("TIMEOUT_SECONDS", "0"), ("TIMEOUT_SECONDS", "-1"),
+            ("TIMEOUT_SECONDS", "nan"), ("TIMEOUT_SECONDS", "inf"), ("TIMEOUT_SECONDS", "slow"),
             ("BASE_URL", "   "), ("MODEL", "   "), ("KEEP_ALIVE", "   "),
         ]
         for suffix, raw in cases:

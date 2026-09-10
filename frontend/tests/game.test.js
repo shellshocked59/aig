@@ -10,7 +10,7 @@ async function setup(t, { state = gameFixture(), overrides = {} } = {}) {
   const dom = new JSDOM('<main id="app"></main>', { url: 'http://localhost:5173' });
   const root = dom.window.document.querySelector('#app');
   const calls = [];
-  const api = Object.fromEntries(['getGame', 'createDemoGame', 'createAiDemoGame', 'startGame', 'moveUnit', 'attackUnit', 'foundCity', 'setProduction', 'setResearch', 'endActivation'].map((name) => [name, async (...args) => {
+  const api = Object.fromEntries(['getGame', 'createDemoGame', 'createAiDemoGame', 'createLlmDemoGame', 'startGame', 'moveUnit', 'attackUnit', 'foundCity', 'setProduction', 'setResearch', 'endActivation'].map((name) => [name, async (...args) => {
     calls.push([name, ...args]);
     return overrides[name] ? overrides[name](...args) : structuredClone(state);
   }]));
@@ -221,7 +221,7 @@ test('reset returns pregame and clears selections; Escape clears local selection
   assert.ok(root.querySelector('[data-action="start"]'));
 });
 
-test('both scenarios are available from the welcome screen and AI demo requires start', async (t) => {
+test('all scenarios are available from the welcome screen and AI demo requires start', async (t) => {
   const pregame = gameFixture();
   pregame.players[1].controller = 'ai';
   pregame.game = { turn: 0, activePlayerId: null, status: 'pre_game' };
@@ -230,11 +230,38 @@ test('both scenarios are available from the welcome screen and AI demo requires 
     createAiDemoGame: () => pregame,
   } });
   assert.match(root.querySelector('[data-action="demo"]').textContent, /Hot-seat/);
-  assert.match(root.querySelector('[data-action="demo-ai"]').textContent, /Human vs AI/);
+  assert.match(root.querySelector('[data-action="demo-ai"]').textContent, /Human vs Heuristic AI/);
+  assert.match(root.querySelector('[data-action="demo-llm"]').textContent, /Human vs LLM/);
   await click('[data-action="demo-ai"]');
   assert.deepEqual(calls.at(-1), ['createAiDemoGame']);
-  assert.match(root.querySelector('.edition').textContent, /Human vs AI/);
+  assert.match(root.querySelector('.edition').textContent, /Human vs Heuristic AI/);
   assert.ok(root.querySelector('[data-action="start"]'));
+});
+
+test('LLM demo uses explicit provider metadata and keeps AI loading until Python returns', async (t) => {
+  const state = gameFixture();
+  state.players[1].controller = 'ai';
+  state.aiProviders = { B: 'ollama' };
+  let resolve;
+  const waiting = new Promise((done) => { resolve = done; });
+  const { root, click, calls, view } = await setup(t, { state, overrides: {
+    createLlmDemoGame: () => state, endActivation: () => waiting,
+  } });
+  await click('[data-action="demo-llm"]');
+  assert.deepEqual(calls.at(-1), ['createLlmDemoGame']);
+  assert.match(root.querySelector('.edition').textContent, /Human vs LLM/);
+  root.querySelector('[data-action="end"]').click();
+  assert.match(root.querySelector('[role="status"]').textContent, /AI turn\.\.\./);
+  for (const control of root.querySelectorAll('button, input, select')) assert.equal(control.disabled, true);
+  const returned = structuredClone(state);
+  returned.game.turn += 1;
+  returned.aiActivations = [{ requestedProvider: 'ollama', actualProvider: 'heuristic', fallbackUsed: true }];
+  resolve(returned);
+  await view.whenIdle();
+  assert.equal(root.querySelector('[data-action="end"]').disabled, false);
+  assert.match(root.querySelector('.edition').textContent, /Human vs LLM/);
+  await click('[data-action="demo"]');
+  assert.deepEqual(calls.at(-1), ['createDemoGame']);
 });
 
 test('AI turn loading disables every control, renders final human turn, and clears selection', async (t) => {

@@ -32,6 +32,7 @@ export function createGameApi(fetcher = (...args) => fetch(...args)) {
     getGame: () => request('', undefined, 'GET'),
     createDemoGame: () => request('/demo'),
     createAiDemoGame: () => request('/demo/ai'),
+    createLlmDemoGame: () => request('/demo/llm'),
     startGame: () => request('/start'),
     moveUnit: (unitId, x, y) => command({ type: 'move_unit', unitId, x, y }),
     attackUnit: (attackerUnitId, targetUnitId) => command({ type: 'attack_unit', attackerUnitId, targetUnitId }),

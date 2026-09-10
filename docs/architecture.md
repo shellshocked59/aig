@@ -15,15 +15,17 @@ The browser never mutates engine state directly and never performs pathfinding,
 combat, economy, production-unlock, or research-prerequisite rules. It never
 contacts Ollama or any other external service. Each action waits for a returned
 authoritative state before rendering. A conventional heuristic AI now uses the
-same command boundary. LLM strategy remains future work. No HTTP imports were
-added to engine modules.
+same command boundary. Ollama supplies alternative strategic plans through the
+same provider protocol. No HTTP imports were added to engine modules.
 
 ## Deterministic heuristic AI
 
 ```text
 GameState
     -> StrategicStateBuilder
-    -> StrategyProvider (currently HeuristicStrategyProvider)
+    -> StrategyProvider
+         |-- HeuristicStrategyProvider
+         `-- OllamaStrategyProvider -> Ollama /api/chat
     -> StrategicPlan
     -> deterministic AI Executor
     -> existing command boundary (apply_command)
@@ -33,9 +35,8 @@ GameState
 `ai/strategy.py` separates strategic intent from tactical execution. The provider
 protocol is `create_plan(state: StrategicState, previous_plan: StrategicPlan | None
 = None) -> StrategicPlan`. Providers receive a detached, compressed view, never
-the mutable engine. A future `OllamaStrategyProvider` will implement this same
-interface; the executor has no provider, HTTP, prompt, retry, or model dependency.
-This slice contains only `HeuristicStrategyProvider` and no Ollama integration.
+the mutable engine. `OllamaStrategyProvider` implements this same interface; the
+executor has no provider, HTTP, prompt, retry, or model dependency.
 
 `StrategicState` is a TypedDict made exclusively of ordinary JSON dictionaries,
 lists, strings, integers, and nulls. It includes player ID, global turn, gold,
@@ -255,6 +256,74 @@ Frontend tests use the Node test runner with jsdom for rendering, selections,
 payloads, controls, errors, and pending-state behavior. CI retains the original
 install/build/unittest sequence and adds the test extra plus `npm test`.
 
+## Local Ollama strategic planning
+
+The browser's **Human vs LLM** button calls `POST /api/game/demo/llm`, selecting
+an explicit application provider while retaining `ControllerType.AI` on B.
+Hot-seat (`/demo`) and Human vs Heuristic AI (`/demo/ai`) remain available.
+`aiProviders` is a runtime player-to-provider mapping, not a persisted game rule.
+The runtime path is browser -> FastAPI -> GameSession -> AiController ->
+OllamaStrategyProvider -> `/api/chat`. The browser never contacts model providers.
+End Turn remains synchronous, with controls disabled and **AI turn...** displayed
+until Python returns the next human activation. No streaming, jobs or WebSockets.
+
+`ai/ollama.py` receives immutable centralized `OllamaSettings` at construction.
+An injected requester defaults to standard-library `urllib.request.urlopen`,
+posting canonical UTF-8 JSON to `{base_url.rstrip('/')}/api/chat`. No dependency
+was added. The configured 4096 context is intentional for the local 6 GB GPU.
+`model`, `stream`, `think`, `keep_alive`, and `options` (`num_ctx`, `temperature`,
+`seed`, `num_predict`) come from settings; this provider requires thinking and
+streaming disabled. `AIG_OLLAMA_TIMEOUT_SECONDS` defaults to 20 seconds and must
+be finite and positive. The HTTP timeout applies to blocking socket operations;
+a repair is a separate request with the same timeout.
+
+The stable `strategy-v1` prompt includes the compact, sorted-key StrategicState,
+only the previous plan (or null), and all valid production/research priority
+options. Future unlocks and already-known technologies remain legal preferences,
+as in heuristic plans; the unchanged executor filters availability. No map grid,
+GameState dump, tactical instructions, explanations or chain-of-thought requests.
+
+`ai/plan_schema.py` defines `strategic-plan-schema-v1`, independent of snapshot v8.
+`format` contains a concrete JSON Schema for the existing six-field plan. All
+fields are required, extra properties forbidden, IDs nullable, enum values
+explicit, and priorities nonempty unique arrays. `parse_plan` strictly checks
+wire types and enum membership, then constructs the existing frozen dataclass
+and checks enemy IDs, enemy city IDs and target ownership against supplied state.
+Duplicate JSON properties and non-finite constants are rejected. Referencable
+enemies are owners of supplied enemy cities/units; opponents with neither cannot
+be selected because the compressed state does not expose their IDs.
+
+Successful HTTP is followed by top-level JSON/envelope validation, completed
+`message.content` extraction, inner JSON parsing, plan validation and only then
+execution. Invalid envelope, JSON, schema or references permit at most one repair
+request with concise feedback and the same schema. Exact invalid content is
+retained in the debug trace. Connection errors, timeouts, non-success HTTP and
+unreadable HTTP bodies fail immediately through `StrategyProviderError`.
+
+`AiController` catches only controlled provider failures and calls the existing
+heuristic with the same state and previous plan. Requested and actual providers
+remain distinct. Plan lifetime is still five global turns by default; missing,
+expired, rewound or invalid-target plans replan, while young valid plans make no
+HTTP request. Fallback plans share this lifetime, avoiding repeated outage calls.
+`AiExecutor` and its result/command trace representation remain unchanged.
+
+The provider retains one detached invocation trace, including exact messages for
+each attempt, serialized state/previous plan, raw content, final validated plan,
+model/configuration, prompt/schema versions, retry count, local request seconds,
+and available Ollama token counts and nanosecond durations. It never retains
+`message.thinking`. The controller adds seed, player/turn, requested/actual
+provider, fallback, replan reason and previous plan age. Orchestration keeps at
+most 64 detached planning records, accessible as `session.ai.inference_traces`.
+No prompts, metrics, retry state or provider state enter GameState or snapshots.
+
+Ordinary API `aiActivations` adds compact provider/model/fallback metadata,
+duration, retries and reuse information alongside each existing plan and command
+sequence. Reused activations report zero inference duration/retries and retain
+the originating provider/fallback identity. Reset clears controller history.
+See [the implementation report](ollama-provider.md) for offline and opt-in live
+verification. Live checks are explicitly invoked via `python -m
+aig.ai.ollama_smoke` (one plan) or `--turns 10` (disposable headless match).
+
 ## Application settings
 
 `backend/aig/settings.py` owns frozen `Settings` and `OllamaSettings` dataclasses,
@@ -274,7 +343,9 @@ Unlike the reference's individual environment getters, empty process strings
 consistently fall through, and invalid boolean spellings fail explicitly.
 
 The API factory calls `load_settings()` once per application instance. It creates
-only the heuristic provider and makes no Ollama calls. A future provider would receive `settings.ollama`.
+the session with AI settings and `settings.ollama`. The session constructs
+`OllamaStrategyProvider(settings.ollama)` only for the explicit LLM demo. Startup
+and hot-seat/heuristic play require no model server.
 The deterministic engine does not read application settings; `GameConfig` remains
 per-game state and application settings are not serialized in snapshots. This
 layer adds no network calls or runtime dependencies. Frozen `AiSettings` supplies
@@ -346,7 +417,7 @@ StrategyProvider / Human UI
      GameState rules
 ```
 
-`backend/aig/commands.py` provides frozen dataclasses `EndActivation(actor_id)`, `EliminatePlayer(actor_id, target_player_id)`, `MoveUnit(actor_id, unit_id, destination: Position)`, `AttackUnit(actor_id, attacker_unit_id, target_unit_id)`, `FoundCity(actor_id, settler_unit_id, city_id, city_name)`, `SetCityProduction(actor_id, city_id, unit_type: UnitType | None)` and `SetResearch(actor_id, technology: Technology | None)`, their `Command` union, and `apply_command(state, command)`. IDs must be non-empty strings. The human UI and heuristic AI produce these requests; future Ollama-directed controllers must use them instead of directly assigning authoritative state. State fields remain mutable and rules APIs remain usable internally for setup and execution.
+`backend/aig/commands.py` provides frozen dataclasses `EndActivation(actor_id)`, `EliminatePlayer(actor_id, target_player_id)`, `MoveUnit(actor_id, unit_id, destination: Position)`, `AttackUnit(actor_id, attacker_unit_id, target_unit_id)`, `FoundCity(actor_id, settler_unit_id, city_id, city_name)`, `SetCityProduction(actor_id, city_id, unit_type: UnitType | None)` and `SetResearch(actor_id, technology: Technology | None)`, their `Command` union, and `apply_command(state, command)`. IDs must be non-empty strings. The human UI and heuristic AI produce these requests; Ollama-directed controllers use them instead of directly assigning authoritative state. State fields remain mutable and rules APIs remain usable internally for setup and execution.
 
 Execution validates state and accepts only supported command types. The actor must exist, must not be eliminated, and must be the current active faction, regardless of controller type. All commands are rejected in pre-game states with no activation and in terminal games. Actor validation always precedes the requested state operation, including a repeated target elimination.
 
@@ -354,7 +425,7 @@ Execution validates state and accepts only supported command types. The actor mu
 
 `MoveUnit` additionally requires an existing unit owned by the actor. It delegates to `movement.move_unit(state, unit_id, destination)`, which validates the destination, computes the full legal shortest path and checks its cost against remaining movement. Only then does it commit the final position and deduct the cost. It never partially executes an over-budget request or automatically ends activation. Moving to the current position is rejected, including with zero movement remaining.
 
-`AttackUnit` requires an existing attacker owned by the actor and names one explicit enemy target, including when enemies are stacked. It delegates to `combat.attack_unit(state, attacker_unit_id, target_unit_id)`. Controllers express intent; the reusable rules executor owns combat legality and resolution. A future LLM-directed executor must use these rules for damage, adjacency, range and resolution rather than asking the LLM to calculate them.
+`AttackUnit` requires an existing attacker owned by the actor and names one explicit enemy target, including when enemies are stacked. It delegates to `combat.attack_unit(state, attacker_unit_id, target_unit_id)`. Controllers express intent; the reusable rules executor owns combat legality and resolution. The shared deterministic executor uses these rules for damage, adjacency, range and resolution rather than asking the LLM to calculate them.
 
 Successful execution mutates the supplied state and returns `None`. Malformed command construction, unsupported commands, invalid actors/targets, and invalid state raise descriptive `ValueError`s before mutation. There is no event or result hierarchy. Command execution is deterministic, without randomness, timestamps or shared mutable execution state. Commands are not persisted; resulting state round-trips through snapshot schema version 8.
 
@@ -461,7 +532,7 @@ Friendly units may stack without a limit: a unit may pass through and stop on fr
 
 The implementation uses breadth-first search because all edges cost 1. Neighbors are always visited in **N, NE, E, SE, S, SW, W, NW** order. A FIFO queue and first-visit predecessor links choose a stable shortest path; dictionary/set iteration never chooses neighbors. Every entered tile is checked for bounds, terrain, hostile units and enemy cities through `GameState.can_enter()`. Future variable costs can replace this isolated BFS with Dijkstra/A* without changing destination-based command intent.
 
-Pathfinding is deterministic executor infrastructure, not controller strategy. The UI and heuristic executor reuse it, and a future LLM-directed executor can do so without supplying every intermediate tile. It contains no AI/LLM logic, combat resolution, zones of control, fog, borders or roads. City occupancy is an entry restriction, without city combat or capture.
+Pathfinding is deterministic executor infrastructure, not controller strategy. The UI and shared AI executor reuse it; neither strategy provider supplies intermediate movement tiles. It contains no AI/LLM logic, combat resolution, zones of control, fog, borders or roads. City occupancy is an entry restriction, without city combat or capture.
 
 ## Deterministic unit combat
 

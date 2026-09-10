@@ -1,0 +1,3 @@
+# Append this entry to C:/laragon/usr/Procfile (preserve its other entries).
+# One worker: the demo stores one shared game in memory per process.
+AIG API: autorun C:/code/aig/.venv/Scripts/python.exe -m uvicorn aig.api:create_app --factory --host 127.0.0.1 --port 8000 --workers 1 pwd=C:/code/aig

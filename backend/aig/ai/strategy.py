@@ -134,7 +134,13 @@ class StrategyProvider(Protocol):
                     previous_plan: StrategicPlan | None = None) -> StrategicPlan: ...
 
 
+class StrategyProviderError(RuntimeError):
+    """Expected planning failure; orchestration may use a fallback provider."""
+
+
 class HeuristicStrategyProvider:
+    name = "heuristic"
+
     def create_plan(self, state: StrategicState,
                     previous_plan: StrategicPlan | None = None) -> StrategicPlan:
         own = state["own_units"]

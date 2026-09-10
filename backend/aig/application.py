@@ -1,13 +1,14 @@
 """One in-memory game. Orchestration only; the engine owns every rule."""
 
 from collections.abc import Callable
+from copy import deepcopy
 from threading import RLock
 
-from aig.ai import AiActivationResult, AiOrchestrator, StrategyProvider
+from aig.ai import AiActivationResult, AiOrchestrator, OllamaStrategyProvider, StrategyProvider
 from aig.commands import Command, FoundCity, apply_command
 from aig.public_state import public_state
 from aig.scenarios import demo_game_setup, human_vs_ai_demo_setup
-from aig.settings import AiSettings
+from aig.settings import AiSettings, OllamaSettings
 from aig.setup import create_game, start_game
 from aig.state import ControllerType, GameState
 
@@ -27,23 +28,37 @@ class GameSession:
     """
 
     def __init__(self, ai_settings: AiSettings = AiSettings(),
-                 strategy_provider: StrategyProvider | None = None) -> None:
+                 strategy_provider: StrategyProvider | None = None, *,
+                 ollama_settings: OllamaSettings = OllamaSettings(),
+                 ollama_provider: StrategyProvider | None = None) -> None:
         self._state: GameState | None = None
         self._next_city_id = 1
         self._lock = RLock()
         self._ai_settings = ai_settings
         self._strategy_provider = strategy_provider
+        self._ollama_settings = ollama_settings
+        self._ollama_provider = ollama_provider
+        self._provider_name = "heuristic"
         self._reset_ai()
 
-    def _reset_ai(self) -> None:
-        self.ai = AiOrchestrator(self._strategy_provider,
+    def _reset_ai(self, provider_name: str = "heuristic") -> None:
+        provider = self._strategy_provider
+        if provider_name == "ollama":
+            provider = self._ollama_provider or OllamaStrategyProvider(self._ollama_settings)
+        self.ai = AiOrchestrator(provider,
                                  replan_interval=self._ai_settings.replan_interval,
                                  max_actions=self._ai_settings.max_actions)
+        self._provider_name = provider_name
 
     def _public_state(self) -> dict:
         result = public_state(self._require_game())
+        providers = {p.id: self._provider_name for p in self._state.players.values()
+                     if p.controller is ControllerType.AI}
+        if providers:
+            result["aiProviders"] = providers
         if self.ai.latest_results:
-            result["aiActivations"] = [r.to_dict() for r in self.ai.latest_results]
+            result["aiActivations"] = [dict(r.to_dict(), **deepcopy(summary))
+                                       for r, summary in zip(self.ai.latest_results, self.ai.latest_summaries)]
         return result
 
     def _require_game(self) -> GameState:
@@ -55,11 +70,13 @@ class GameSession:
         with self._lock:
             return self._public_state()
 
-    def demo(self, *, versus_ai: bool = False) -> dict:
+    def demo(self, *, versus_ai: bool = False, provider: str = "heuristic") -> dict:
+        if provider not in {"heuristic", "ollama"}:
+            raise ValueError("demo provider must be heuristic or ollama")
         with self._lock:
+            self._reset_ai(provider if versus_ai else "heuristic")
             self._state = create_game(human_vs_ai_demo_setup() if versus_ai else demo_game_setup())
             self._next_city_id = 1
-            self._reset_ai()
             return self._public_state()
 
     def start(self) -> dict:
