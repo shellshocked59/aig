@@ -1,5 +1,7 @@
 import '../css/main.css';
+import '../css/arena.css';
 import { createGameApi } from './api/game.js';
-import { mountGame } from './game.js';
+import { createArenaApi } from './api/arena.js';
+import { mountEnvironments } from './environments.js';
 
-mountGame(document.querySelector('#app'), createGameApi());
+mountEnvironments(document.querySelector('#app'), createGameApi(), createArenaApi());

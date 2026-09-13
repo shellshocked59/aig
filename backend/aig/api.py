@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, StrictInt
 
 from aig.application import ApplicationError, GameSession
+from aig.arena.api import arena_router
+from aig.arena.application import ArenaSession
 from aig.commands import AttackUnit, EndActivation, MoveUnit, SetCityProduction, SetResearch
 from aig.settings import load_settings
 from aig.state import Position, Technology, UnitType
@@ -76,6 +78,13 @@ def create_app() -> FastAPI:
     session = GameSession(app.state.settings.ai, ollama_settings=app.state.settings.ollama,
                           openai_settings=app.state.settings.openai)
     app.state.session = session
+    app.state.arena_session = ArenaSession(app.state.settings)
+    app.include_router(arena_router(app.state.arena_session))
+
+    @app.get("/api/environments")
+    def environments():
+        return [{"id": "empire", "name": "Empire", "path": "/api/game"},
+                {"id": "arena", "name": "Arena", "path": "/api/arena"}]
 
     @app.exception_handler(ApplicationError)
     async def application_error(request: Request, exc: ApplicationError):

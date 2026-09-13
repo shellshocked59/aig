@@ -1,0 +1,37 @@
+.environment-picker { display: flex; gap: .6rem; padding: .7rem 1rem; border-bottom: 1px solid #56645b; }
+.environment-picker [aria-pressed="true"], .arena-actions [aria-pressed="true"] { outline: 2px solid #eac46b; }
+.arena-view { padding: 1rem; max-width: 1400px; margin: auto; }
+.arena-view header h1 { margin-bottom: .2rem; }
+.arena-view header { margin-bottom: .8rem; }
+.arena-view header p { margin-bottom: .8rem; }
+.arena-view .arena-status { margin: .7rem 0; }
+.arena-view button { cursor: pointer; }
+.arena-view button:disabled { cursor: default; }
+.arena-view [role="alert"] { color: #ffb5a5; }
+.arena-status { font-size: 1.3rem; font-weight: bold; }
+.arena-layout { display: flex; align-items: start; gap: 1.3rem; margin-top: 1rem; }
+.arena-scroll { overflow-x: auto; flex: 1; }
+.arena-board { display: grid; grid-template-columns: repeat(9, minmax(70px, 1fr)); min-width: 660px; gap: 4px; }
+.arena-view .arena-tile { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; height: 122px; padding: 20px 2px 3px; border: 2px solid #687060; border-radius: 5px; background: #263a32; color: #d6e2d8; font-size: .7rem; }
+.arena-tile strong { text-transform: capitalize; font-size: .8rem; }
+.arena-view .arena-blocked { background: #222628; color: #9ba0a1; }
+.arena-view .arena-power { background: #534521; }
+.arena-view .arena-ward { background: #243d53; }
+.arena-view .arena-siege { background: #493448; }
+.arena-icon { width: 32px; height: 32px; flex-shrink: 0; }
+.arena-team-blue > .arena-icon { color: #70beff; }
+.arena-team-red > .arena-icon { color: #ffa097; }
+.arena-view .arena-team-blue { border-color: #609dd0; }
+.arena-view .arena-team-red { border-color: #db817b; }
+.arena-view .arena-selected { outline: 3px solid #fff; outline-offset: -5px; }
+.arena-view .arena-legal { box-shadow: inset 0 0 0 4px #e5c85b; }
+.arena-coordinate { position: absolute; left: 3px; top: 2px; font-size: .6rem; opacity: .7; }
+.arena-bonus { display: flex; align-items: center; position: absolute; top: 1px; right: 2px; font-size: .55rem; text-transform: uppercase; }
+.arena-bonus .arena-icon { width: 12px; height: 12px; }
+.arena-details { display: flex; flex-direction: column; width: 260px; flex-shrink: 0; line-height: 1.45; }
+.arena-view .arena-tile:disabled { opacity: 1; }
+.arena-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+@media (max-width: 1050px) { .arena-layout { flex-direction: column; } .arena-scroll { width: 100%; } .arena-details { width: auto; } }
+
+.arena-downed > .arena-icon { filter: grayscale(1); opacity: .45; transform: rotate(70deg); }
+.arena-downed-badge { background: #181c20; color: #fff; font-size: .6rem; font-weight: bold; padding: 1px 4px; }

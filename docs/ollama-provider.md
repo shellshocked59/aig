@@ -196,3 +196,9 @@ smoke match has not been measured; the current compressed entity lists are not
 token-budgeted. For longer experiments, consume/export trace records during the
 run because only the latest 64 replans are retained. No model tuning or new game
 systems were added.
+
+Arena Phase 4 also uses these connection/model settings through an independent
+`OllamaArenaTurnProvider`. `AIG_ARENA_TURN_PROVIDER=ollama` selects Arena's configured
+opponent without changing Empire selection. Arena's prompt and tactical plan
+schema are separate; see [Arena AI](arena-ai.md#model-providers-phase-4) for its
+repair, fallback, telemetry and opt-in one-request smoke command.

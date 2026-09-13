@@ -41,7 +41,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_ai_defaults_and_environment_local_precedence(self):
         self.assertEqual(asdict(self.load().ai), {'replan_interval': 5, 'max_actions': 256, 'strategy_provider': 'heuristic',
-                                               'strategy_prompt_version': 'latest'})
+                                           'strategy_prompt_version': 'latest', 'arena_turn_provider': 'heuristic'})
         self.write_local('AIG_AI_REPLAN_INTERVAL=3\nAIG_AI_MAX_ACTIONS=100\n')
         self.assertEqual(self.load().ai.replan_interval, 3)
         self.assertEqual(self.load({'AIG_AI_MAX_ACTIONS': '40'}).ai.max_actions, 40)

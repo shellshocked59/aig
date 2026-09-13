@@ -10,7 +10,10 @@ export class ApiError extends Error {
 // esbuild supplies the public origin; direct Node tests retain same-origin URLs.
 const configuredApiBaseUrl = typeof __AIG_API_BASE_URL__ === 'undefined' ? '' : __AIG_API_BASE_URL__;
 
-export function createGameApi(fetcher = (...args) => fetch(...args), baseUrl = configuredApiBaseUrl) {
+// Keep the native network call in this existing audited browser boundary.
+export const browserFetch = (...args) => fetch(...args);
+
+export function createGameApi(fetcher = browserFetch, baseUrl = configuredApiBaseUrl) {
   const origin = baseUrl.replace(/\/$/, '');
   async function request(path = '', payload, method = 'POST') {
     let response;

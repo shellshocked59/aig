@@ -1,5 +1,10 @@
 # Original demo sprite atlas
 
+Arena uses separate original inline SVG placeholders in `js/arena-icons.js`
+(shield, bow, hat, healing cross, crystal, bonus markers and ruins), following
+the existing inline resource/camp icon convention. Team colors, class labels and
+HP supplement the shapes. Arena does not alter or reuse this Empire sprite atlas.
+
 `sprites.png` is a project-local RGBA PNG, 256×192 pixels (about 104 KiB).
 It contains four columns and three rows of 64×64 cells:
 

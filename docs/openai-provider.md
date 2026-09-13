@@ -146,3 +146,9 @@ Implementation validation is offline with fake SDK clients and the real SDK
 using an in-memory HTTP transport for request serialization, response decoding,
 HTTP failures, retry counts, and controller fallback. Live smoke and
 baseline measurements remain separate, explicitly authorized actions.
+
+Arena Phase 4 also uses `OpenAISettings` through an independent
+`OpenAIArenaTurnProvider`. `AIG_ARENA_TURN_PROVIDER=openai` selects Arena's configured
+opponent without changing Empire selection. Arena directly outputs tactical action
+sequences using its own prompt and schema. See [Arena AI](arena-ai.md#model-providers-phase-4)
+for pre-execution repair, visible fallback, telemetry and the opt-in one-request smoke.

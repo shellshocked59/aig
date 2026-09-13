@@ -77,8 +77,11 @@ class AiSettings:
     max_actions: int = 256
     strategy_provider: StrategyProviderName = "heuristic"
     strategy_prompt_version: str = "latest"
+    arena_turn_provider: StrategyProviderName = "heuristic"
 
     def __post_init__(self) -> None:
+        if self.arena_turn_provider not in ("heuristic", "ollama", "openai"):
+            raise ValueError("AIG_ARENA_TURN_PROVIDER must be heuristic, ollama, or openai")
         if self.strategy_provider not in ("heuristic", "ollama", "openai"):
             raise ValueError("AIG_STRATEGY_PROVIDER must be heuristic, ollama, or openai")
         for name in ("replan_interval", "max_actions"):
@@ -119,7 +122,7 @@ _SETTING_GROUPS = (("ollama", OllamaSettings), ("ai", AiSettings),
 
 
 def _environment_name(group: str, field_name: str) -> str:
-    if group == "ai" and field_name in ("strategy_provider", "strategy_prompt_version"):
+    if group == "ai" and field_name in ("strategy_provider", "strategy_prompt_version", "arena_turn_provider"):
         return f"AIG_{field_name.upper()}"
     # Deliberate exception: there is no AIG_OPENAI_API_KEY alias.
     if group == "openai" and field_name == "api_key":

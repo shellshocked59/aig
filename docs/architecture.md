@@ -1,5 +1,29 @@
 # Architecture
 
+## Two research environments
+
+```text
+Agent Strategy
+|-- Empire environment: long-horizon strategy, StrategicPlan + deterministic executor
+`-- Arena environment: perfect-information tactics, manual tactical commands in Phase 2
+```
+
+Arena is additive. `aig.arena` owns a separate `ArenaState`, immutable commands,
+9x5 board, team AP rules, session, public DTO and namespaced snapshots/replay.
+Arena defaults to `arena-rules-v2` / `arena-snapshot-v2`; explicit historical
+`aig.arena.v1` imports preserve Phase 1 rules and hashes. Geometry and legal-action
+queries stay Arena-local; the browser consumes the authoritative command validator.
+The browser explicitly selects Empire or Arena and retains independent views.
+`/api/game` remains Empire; `/api/arena` is Arena; `/api/environments` describes
+both. This application environment selection is distinct from the frozen Empire
+`environment-vN` experiment provenance registry described below.
+
+No Empire state, provider, scenario, snapshot schema, benchmark or frozen artifact
+is generalized to accommodate Arena. Only immutable coordinates/neighbor order
+and small existing browser utilities are reused. Arena's future direct tactical
+turn planner is intentionally deferred. See [Arena rules, interfaces, headless
+examples and limitations](arena.md).
+
 ## Environment V5 runtime update
 
 The current runtime is Environment V5, snapshot v12. See

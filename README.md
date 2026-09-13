@@ -1,6 +1,38 @@
 # Aether, Iron & Glory
 
-Current runtime: **Environment V5 / Scenario V3 / snapshot v12**. Permanent total
+The repository now supports two research environments: **Empire**, the existing
+long-horizon strategy experiment, and **Arena**, a separate deterministic 9x5
+fantasy tactics game with perfect information and five shared AP per turn.
+Empire's heuristic/Qwen/Luna experiments remain preserved. Arena includes
+downed units, Finish/Revive, class specials, obstacle LOS, and direct tactical
+turn providers: Heuristic, Ollama/Qwen and OpenAI/Luna (Phase 4).
+
+To play Arena, launch the normal backend/frontend below, choose **Arena Demo**
+beside **Empire Demos**, then create an **Arena Demo**. Select a unit, choose
+an action, and left-click a highlighted destination, impact tile or target. End Turn
+hands control to the other team. Choose **Arena Human vs Heuristic** to face the
+AI, or select **Human vs Qwen**, **Human vs OpenAI (Luna)**, or **Human vs Configured AI**.
+`AIG_ARENA_TURN_PROVIDER` selects the configured Arena opponent independently of
+Empire's `AIG_STRATEGY_PROVIDER`; both default to heuristic. AI turns run after End Turn.
+Model actions are bounded to five AP, with one static-output repair and visible
+heuristic fallback on provider failure. See [Arena AI](docs/arena-ai.md) for
+opt-in smoke commands and [Phase 4 verification](docs/arena-phase4-verification.md). Run
+`python -m aig.arena.simulate --max-turns 100` for deterministic AI vs AI, or
+`python scripts/arena-ai-verify.py` for four identical matches and tactical probes.
+See [Arena rules](docs/arena.md) and [Arena AI contracts](docs/arena-ai.md).
+
+Arena Phase 5 adds controlled matches and frozen tactical probes with strict
+provider purity, separate warmup latency, and offline replay verification:
+
+```powershell
+.venv/Scripts/python.exe -m aig.arena.benchmark --mode matches --games 4 --output .local/arena-heuristic-matches
+.venv/Scripts/python.exe -m aig.arena.benchmark --mode probes --probe all --probe-trials 4 --output .local/arena-heuristic-probes
+```
+
+These commands use only the offline heuristic. See [Arena benchmarking](docs/arena-benchmarking.md)
+for metrics, interpretation, and the separately authorized live-provider commands.
+
+Current Empire runtime: **Environment V5 / Scenario V3 / snapshot v12**. Permanent total
 war, undefended city capture and zero-city elimination now permit conquest
 victory. Fog, resources, barbarians and frozen planner/model artifacts remain.
 The primary future comparison is Heuristic vs Luna.
