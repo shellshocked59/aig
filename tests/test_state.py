@@ -28,7 +28,7 @@ def example_state(*, debug_mode: bool = False) -> GameState:
         turn_order=["player-a", "player-b"],
         active_player_id="player-b",
         players={
-            "player-a": PlayerState("player-a", ControllerType.HUMAN),
+            "player-a": PlayerState("player-a", ControllerType.HUMAN, has_ever_owned_city=True),
             "player-b": PlayerState("player-b", ControllerType.AI),
         },
         tiles={origin: TileState(origin), neighbor: TileState(neighbor)},
@@ -189,32 +189,36 @@ class StateTests(unittest.TestCase):
 
 
 class SnapshotTests(unittest.TestCase):
-    def test_v8_json_contract_and_round_trip(self):
+    def test_v9_json_contract_and_round_trip(self):
         state = example_state()
         snapshot = to_snapshot(state)
         self.assertEqual(snapshot, {
-            "schema_version": 8,
+            "schema_version": 12,
+            "result": None,
+            "camps": [],
             "config": {"seed": 42, "debug_mode": False},
             "turn": 3,
             "turn_order": ["player-a", "player-b"],
             "active_player_id": "player-b",
             "players": [
-                {"id": "player-a", "controller": "human", "eliminated": False, "gold": 0,
+                {"id": "player-a", "controller": "human", "kind": "civilization", "has_ever_owned_city": True, "eliminated": False, "gold": 0,
                  "science_stored": 0, "research_target": None,
-                 "researched_technologies": ["agriculture"]},
-                {"id": "player-b", "controller": "ai", "eliminated": False, "gold": 0,
+                 "researched_technologies": ["agriculture"],
+                 "knowledge": {"explored_positions": [], "discovered_cities": [], "discovered_camps": []}},
+                {"id": "player-b", "controller": "ai", "kind": "civilization", "has_ever_owned_city": False, "eliminated": False, "gold": 0,
                  "science_stored": 0, "research_target": None,
-                 "researched_technologies": ["agriculture"]},
+                 "researched_technologies": ["agriculture"],
+                 "knowledge": {"explored_positions": [], "discovered_cities": [], "discovered_camps": []}},
             ],
             "tiles": [
-                {"position": {"x": 0, "y": 0}, "terrain": "grassland", "owner_id": None},
-                {"position": {"x": -1, "y": 2}, "terrain": "grassland", "owner_id": None},
+                {"position": {"x": 0, "y": 0}, "terrain": "grassland", "owner_id": None, "resource": None},
+                {"position": {"x": -1, "y": 2}, "terrain": "grassland", "owner_id": None, "resource": None},
             ],
             "cities": [{"id": "city-7", "owner_id": "player-a", "position": {"x": 0, "y": 0},
                         "name": "First City", "population": 1,
                         "food_stored": 0, "production_stored": 0, "production_target": None}],
             "units": [{"id": "unit-9", "owner_id": "player-b", "position": {"x": -1, "y": 2},
-                       "unit_type": "warrior", "moves_remaining": 1, "hp": 100}],
+                       "unit_type": "warrior", "moves_remaining": 1, "hp": 100, "home_camp_id": None}],
             "game_map": {"width": 2, "height": 3, "origin": {"x": -1, "y": 0}},
             "next_unit_id": 1,
         })

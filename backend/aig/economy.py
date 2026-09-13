@@ -5,7 +5,7 @@ from types import MappingProxyType
 
 from aig.production import production_cost
 from aig.research import technology_cost
-from aig.state import CityState, GameState, Position, Terrain, _identifier, _integer
+from aig.state import CityState, GameState, Position, ResourceType, TileState, Terrain, _identifier, _integer
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,31 @@ def terrain_yields(terrain: Terrain) -> Yields:
     return _TERRAIN_YIELDS[terrain]
 
 
+_RESOURCE_YIELDS = MappingProxyType({
+    ResourceType.WHEAT: Yields(food=1),
+    ResourceType.CATTLE: Yields(food=1, production=1),
+    ResourceType.IRON: Yields(production=2),
+    ResourceType.GEMS: Yields(gold=3),
+    ResourceType.SPICES: Yields(food=1, gold=2),
+})
+
+
+def resource_yields(resource: ResourceType | None) -> Yields:
+    if resource is None:
+        return Yields()
+    if not isinstance(resource, ResourceType):
+        raise ValueError("resource must be a ResourceType or None")
+    return _RESOURCE_YIELDS[resource]
+
+
+def tile_yields(tile: TileState, *, city_center: bool = False) -> Yields:
+    """Terrain, then optional center minimums, then the static resource bonus."""
+    base = terrain_yields(tile.terrain)
+    if city_center:
+        base = Yields(max(base.food, 2), max(base.production, 1), base.gold)
+    return base + resource_yields(tile.resource)
+
+
 def _validate_city(state: GameState, city: CityState) -> None:
     state.validate()
     if not isinstance(city, CityState) or state.cities.get(city.id) is not city:
@@ -57,8 +82,7 @@ def _validate_city(state: GameState, city: CityState) -> None:
 def city_center_yields(state: GameState, city: CityState) -> Yields:
     """The free center has at least 2 food and 1 production, without terraforming."""
     _validate_city(state, city)
-    base = terrain_yields(state.tiles[city.position].terrain)
-    return Yields(max(base.food, 2), max(base.production, 1), base.gold)
+    return tile_yields(state.tiles[city.position], city_center=True)
 
 
 def workable_positions(state: GameState, city: CityState) -> list[Position]:
@@ -85,7 +109,7 @@ def worked_positions(state: GameState, city: CityState) -> list[Position]:
     The free center is not included. Assignments are derived on every query.
     """
     def priority(position: Position) -> tuple[int, int, int, int, int]:
-        yields = terrain_yields(state.tiles[position].terrain)
+        yields = tile_yields(state.tiles[position])
         return (-yields.food, -yields.production, -yields.gold, position.y, position.x)
 
     return sorted(workable_positions(state, city), key=priority)[:city.population]
@@ -93,7 +117,7 @@ def worked_positions(state: GameState, city: CityState) -> list[Position]:
 
 def city_yields(state: GameState, city: CityState) -> Yields:
     """Total free center plus selected surroundings, using current population."""
-    return sum((terrain_yields(state.tiles[p].terrain) for p in worked_positions(state, city)),
+    return sum((tile_yields(state.tiles[p]) for p in worked_positions(state, city)),
                city_center_yields(state, city))
 
 
@@ -112,10 +136,14 @@ def resolve_player_economy(state: GameState, player_id: str) -> None:
     activation or refreshes movement, and is not called by elimination or loading.
     """
     state.validate()
+    if state.result is not None:
+        raise ValueError("game has ended")
     _identifier(player_id, "player_id")
     if player_id not in state.players or state.players[player_id].eliminated:
         raise ValueError("economy owner must be a live player")
     player = state.players[player_id]
+    if state.is_barbarian(player_id):
+        raise ValueError("system faction has no economy")
     gold = player.gold
     science = player.science_stored
     results = []
@@ -165,3 +193,5 @@ def resolve_player_economy(state: GameState, player_id: str) -> None:
     player.science_stored = science
     player.researched_technologies = technologies
     player.research_target = research_target
+    from aig.knowledge import update_knowledge
+    update_knowledge(state)

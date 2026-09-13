@@ -12,6 +12,7 @@ from aig.scenarios import demo_game_setup, human_vs_ai_demo_setup
 from aig.settings import AiSettings, OllamaSettings, OpenAISettings, StrategyProviderName
 from aig.setup import create_game, start_game
 from aig.state import ControllerType, GameState
+from aig.barbarians import BarbarianActivationResult
 
 
 class ApplicationError(Exception):
@@ -51,11 +52,13 @@ class GameSession:
         provider = self._strategy_provider
         if provider_name == "openai":
             try:
-                provider = self._openai_provider or OpenAIStrategyProvider(self._openai_settings)
+                provider = self._openai_provider or OpenAIStrategyProvider(
+                    self._openai_settings, prompt_version=self._ai_settings.strategy_prompt_version)
             except StrategyProviderError as error:
                 raise ApplicationError("provider_not_available", str(error)) from None
         if provider_name == "ollama":
-            provider = self._ollama_provider or OllamaStrategyProvider(self._ollama_settings)
+            provider = self._ollama_provider or OllamaStrategyProvider(
+                self._ollama_settings, prompt_version=self._ai_settings.strategy_prompt_version)
         self.ai = AiOrchestrator(provider,
                                  replan_interval=self._ai_settings.replan_interval,
                                  max_actions=self._ai_settings.max_actions)
@@ -64,11 +67,13 @@ class GameSession:
     def _public_state(self) -> dict:
         result = public_state(self._require_game())
         providers = {p.id: self._provider_name for p in self._state.players.values()
-                     if p.controller is ControllerType.AI}
+                     if p.controller is ControllerType.AI and not self._state.is_barbarian(p.id)}
         if providers:
             result["aiProviders"] = providers
         if self.ai.latest_results:
-            result["aiActivations"] = [dict(r.to_dict(), **deepcopy(summary))
+            result["aiActivations"] = [dict(player_id=r.player_id, **{
+                key: deepcopy(summary[key]) for key in ("requestedProvider", "actualProvider", "fallbackUsed",
+                    "model", "durationSeconds", "retryCount") if key in summary})
                                        for r, summary in zip(self.ai.latest_results, self.ai.latest_summaries)]
         return result
 
@@ -122,7 +127,7 @@ class GameSession:
             self.ai.advance_until_human(self._require_game())
             return self._public_state()
 
-    def run_active_ai_activation(self) -> AiActivationResult | None:
+    def run_active_ai_activation(self) -> AiActivationResult | BarbarianActivationResult | None:
         with self._lock:
             return self.ai.run_active_ai_activation(self._require_game())
 

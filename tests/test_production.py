@@ -371,7 +371,8 @@ class ProductionAllocatorTests(unittest.TestCase):
 
     def test_multi_city_ids_use_lexical_city_order_independent_of_insertion(self):
         source = production_state()
-        source.remove_city("a")
+        del source.cities["a"]
+        source.players["A"].has_ever_owned_city = False
         for city_id, position, target in (("city-2", Position(1, 1), UnitType.SCOUT),
                                           ("city-10", Position(4, 1), UnitType.ARCHER)):
             source.add_city(CityState(city_id, "A", position, name=city_id,
@@ -396,7 +397,8 @@ class ProductionAllocatorTests(unittest.TestCase):
 class FoundingAndEliminationProductionTests(unittest.TestCase):
     def test_found_set_target_and_resolve_during_same_activation(self):
         state = production_state()
-        state.remove_city("a")
+        del state.cities["a"]
+        state.players["A"].has_ever_owned_city = False
         settler = state.add_unit("A", UnitType.SETTLER, Position(1, 1))
         apply_command(state, FoundCity("A", settler.id, "a", "Alpha"))
         city = state.cities["a"]
@@ -409,7 +411,8 @@ class FoundingAndEliminationProductionTests(unittest.TestCase):
 
     def test_new_city_can_complete_if_first_yields_are_sufficient(self):
         state = production_state()
-        state.remove_city("a")
+        del state.cities["a"]
+        state.players["A"].has_ever_owned_city = False
         settler = state.add_unit("A", UnitType.SETTLER, Position(1, 1))
         apply_command(state, FoundCity("A", settler.id, "a", "Alpha"))
         apply_command(state, SetCityProduction("A", "a", UnitType.WARRIOR))
@@ -427,6 +430,8 @@ class FoundingAndEliminationProductionTests(unittest.TestCase):
             state = production_state()
             city = ready_city(state, stored=100)
             city.owner_id = active
+            for p in state.players.values():
+                p.has_ever_owned_city = any(c.owner_id == p.id for c in state.cities.values())
             state.active_player_id = active
             state.add_unit(active, UnitType.SCOUT, city.position)
             state.players[active].gold = 7
@@ -464,7 +469,8 @@ class FoundingAndEliminationProductionTests(unittest.TestCase):
         state = production_state()
         ready_city(state, stored=100)
         state.remove_city("a")
-        apply_command(state, EndActivation("A"))
+        with self.assertRaises(ValueError):
+            apply_command(state, EndActivation("A"))
         self.assertEqual(state.units, {})
         self.assertEqual(state.next_unit_id, 1)
 
@@ -505,9 +511,9 @@ class ProductionSnapshotTests(unittest.TestCase):
         self.assertEqual(restored.add_unit("B", UnitType.WARRIOR, Position(7, 4)).id, "unit-9")
         self.assertEqual(saved.next_unit_id, 9)
 
-    def test_strict_v8_shape_and_no_derived_fields(self):
+    def test_strict_v9_shape_and_no_derived_fields(self):
         snapshot = to_snapshot(production_state())
-        self.assertEqual(snapshot["schema_version"], 8)
+        self.assertEqual(snapshot["schema_version"], 12)
         self.assertEqual(set(snapshot["cities"][0]), {
             "id", "owner_id", "position", "name", "population", "food_stored",
             "production_stored", "production_target",

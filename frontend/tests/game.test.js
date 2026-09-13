@@ -2,9 +2,102 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
 import { mountGame } from '../src/js/game.js';
-import { terrainSprites, unitSprites, faction } from '../src/js/presentation.js';
+import { terrainSprites, unitSprites, resourceSprites, faction } from '../src/js/presentation.js';
 import { ApiError } from '../src/js/api/game.js';
 import { gameFixture } from './fixtures.js';
+
+test('known camp has original icon in explored fog and no hidden camp icon', async (t) => {
+  const state = gameFixture();
+  const [known, hidden] = state.map.tiles;
+  Object.assign(known, { explored: true, visible: false });
+  Object.assign(hidden, { explored: false, visible: false });
+  state.barbarianCamps = [
+    { id: 'known', x: known.x, y: known.y, currently_visible: false, live_exists: null },
+    { id: 'hidden', x: hidden.x, y: hidden.y, live_exists: true },
+  ];
+  const { root } = await setup(t, { state });
+  assert.equal(root.querySelectorAll('.camp-icon').length, 1);
+  assert.ok(root.querySelector('.fogged .camp-icon svg'));
+  assert.match(root.querySelector('.camp-icon').title, /current status unknown/);
+});
+
+test('visible barbarian uses Warrior sprite and disappears after sight is lost', async (t) => {
+  const state = gameFixture();
+  Object.assign(state.units[2], { ownerId: 'barbarians', type: 'warrior', barbarian: true });
+  const hidden = structuredClone(state);
+  hidden.units = hidden.units.filter((u) => !u.barbarian);
+  let reads = 0;
+  const { root, click } = await setup(t, { state, overrides: {
+    getGame: () => structuredClone(reads++ ? hidden : state),
+  } });
+  assert.ok(root.querySelector('.faction-barbarian .sprite-warrior'));
+  assert.equal(faction('barbarians').name, 'Barbarians');
+  await click('[data-action="refresh"]');
+  assert.equal(root.querySelector('.piece.faction-barbarian'), null);
+});
+
+test('confirmed absent camps have no icon', async (t) => {
+  const state = gameFixture();
+  state.barbarianCamps = [{ id: 'gone', x: 0, y: 0, live_exists: false }];
+  const { root } = await setup(t, { state });
+  assert.equal(root.querySelector('.camp-icon'), null);
+});
+
+test('all five original resource icons render only on explored tiles', async (t) => {
+  assert.deepEqual(Object.keys(resourceSprites), ['wheat', 'cattle', 'iron', 'gems', 'spices']);
+  const state = gameFixture();
+  Object.keys(resourceSprites).forEach((resource, index) => {
+    Object.assign(state.map.tiles[index], { resource, explored: true, visible: false });
+  });
+  const { root } = await setup(t, { state });
+  assert.equal(root.querySelectorAll('.fogged .resource-icon svg').length, 5);
+  for (const name of ['Wheat', 'Cattle', 'Iron', 'Gems', 'Spices']) {
+    assert.ok(root.querySelector(`.resource-icon[aria-label="${name}"]`));
+  }
+});
+
+test('unexplored resource is excluded from DOM even in malformed fixture', async (t) => {
+  const state = gameFixture();
+  Object.assign(state.map.tiles[4], { resource: 'gems', terrain: null, explored: false, visible: false });
+  const { root } = await setup(t, { state });
+  assert.equal(root.querySelectorAll('.resource-icon').length, 0);
+  assert.doesNotMatch(root.innerHTML, /Gems|gems|bc80eb/);
+});
+
+test('fog flags render unknown terrain and dim explored terrain', async (t) => {
+  const state = gameFixture();
+  state.map.tiles[4] = { ...state.map.tiles[4], terrain: null, explored: false, visible: false };
+  state.map.tiles[5] = { ...state.map.tiles[5], explored: true, visible: false };
+  const { root, click } = await setup(t, { state });
+  assert.ok(root.querySelector('.unexplored .unknown-terrain'));
+  assert.ok(root.querySelector('.fogged .sprite-water'));
+  assert.match(root.querySelector('#tile-1-1').getAttribute('aria-label'), /Unexplored/);
+  await click('#tile-1-1');
+  assert.doesNotMatch(root.textContent, /undefined/);
+});
+
+test('remembered city renders without current population or production', async (t) => {
+  const state = gameFixture();
+  state.cities.push({ id: 'remembered', ownerId: 'B', x: 2, y: 1, currentlyVisible: false, liveExists: null });
+  const { root, click } = await setup(t, { state });
+  await click('[data-action="city"][data-id="remembered"]');
+  const panel = root.querySelector('[aria-label="Selected city"]');
+  assert.match(panel.textContent, /Current details unknown/);
+  assert.doesNotMatch(panel.textContent, /Population|Building|undefined/);
+});
+
+test('refresh removes enemy units that left vision', async (t) => {
+  const state = gameFixture();
+  const hidden = structuredClone(state);
+  hidden.units = hidden.units.filter((u) => u.ownerId === 'A');
+  const { root, click } = await setup(t, { state, overrides: { getGame: (() => {
+    let count = 0;
+    return () => structuredClone(count++ ? hidden : state);
+  })() } });
+  assert.ok(root.querySelector('[data-id="unit-3"]'));
+  await click('[data-action="refresh"]');
+  assert.equal(root.querySelector('[data-id="unit-3"]'), null);
+});
 
 async function setup(t, { state = gameFixture(), overrides = {} } = {}) {
   const dom = new JSDOM('<main id="app"></main>', { url: 'http://localhost:5173' });
@@ -358,10 +451,12 @@ test('scenario reset from an existing match uses the selected scenario', async (
 
 test('terminal game cannot start or issue gameplay commands', async (t) => {
   const state = gameFixture();
-  state.game = { turn: 10, activePlayerId: null, status: 'terminal' };
+  state.game = { turn: 10, activePlayerId: null, status: 'terminal', terminal: true,
+    winnerPlayerId: 'A', victoryType: 'conquest' };
   const { root } = await setup(t, { state });
   assert.equal(root.querySelector('[data-action="start"]').disabled, true);
   assert.match(root.querySelector('[data-action="start"]').textContent, /Game ended/);
+  assert.match(root.querySelector('.active-faction').textContent, /wins \u2014 Conquest/);
   assert.equal(root.querySelector('#research'), null);
 });
 
@@ -394,4 +489,32 @@ test('explicit OpenAI demo and reset preserve the mode label and existing choice
   }
   await click('[data-action="demo-openai"]');
   assert.deepEqual(calls.at(-1), ['createOpenAiDemoGame']);
+});
+
+test('four civilizations have distinct stable identities and render C/D ownership and turns', async (t) => {
+  assert.equal(new Set(['A', 'B', 'C', 'D'].map((id) => faction(id).className)).size, 4);
+  const state = gameFixture();
+  const template = state.players[0];
+  state.players.push({ ...structuredClone(template), id: 'C' }, { ...structuredClone(template), id: 'D' });
+  state.game.activePlayerId = 'D';
+  state.units[0].ownerId = 'D';
+  state.cities[0].ownerId = 'C';
+  const { root } = await setup(t, { state });
+  assert.match(root.textContent, /Violet Dominion/);
+  assert.match(root.textContent, /Jade Assembly/);
+  assert.ok(root.querySelector('.faction-c'));
+  assert.ok(root.querySelector('.faction-d'));
+});
+
+test('four-player conquest displays either new faction as winner', async (t) => {
+  for (const id of ['C', 'D']) {
+    const state = gameFixture();
+    state.game.status = 'terminal';
+    state.game.terminal = true;
+    state.game.winnerPlayerId = id;
+    state.game.activePlayerId = null;
+    const { root } = await setup(t, { state });
+    assert.ok(root.textContent.includes(`${faction(id).name} wins`));
+    assert.ok(root.querySelector('[data-action="start"]').disabled);
+  }
 });

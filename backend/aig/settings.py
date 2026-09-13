@@ -76,6 +76,7 @@ class AiSettings:
     replan_interval: int = 5
     max_actions: int = 256
     strategy_provider: StrategyProviderName = "heuristic"
+    strategy_prompt_version: str = "latest"
 
     def __post_init__(self) -> None:
         if self.strategy_provider not in ("heuristic", "ollama", "openai"):
@@ -118,8 +119,8 @@ _SETTING_GROUPS = (("ollama", OllamaSettings), ("ai", AiSettings),
 
 
 def _environment_name(group: str, field_name: str) -> str:
-    if group == "ai" and field_name == "strategy_provider":
-        return "AIG_STRATEGY_PROVIDER"
+    if group == "ai" and field_name in ("strategy_provider", "strategy_prompt_version"):
+        return f"AIG_{field_name.upper()}"
     # Deliberate exception: there is no AIG_OPENAI_API_KEY alias.
     if group == "openai" and field_name == "api_key":
         return "OPENAI_API_KEY"
@@ -151,6 +152,8 @@ def load_settings(
             name = _environment_name(group, field.name)
             default = getattr(defaults, field.name)
             raw = environment.get(name) or local.get(name)
+            if name == "AIG_STRATEGY_PROMPT_VERSION" and raw == "":
+                raw = None
             if name == "OPENAI_API_KEY" and raw == "":
                 raw = None
             values[field.name] = default if raw is None else _parse_value(name, raw, default)

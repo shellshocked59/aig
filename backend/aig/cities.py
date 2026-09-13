@@ -50,3 +50,5 @@ def found_city(state: GameState, settler_unit_id: str, city_id: str, city_name: 
     state.add_city(city)
     del state.units[settler.id]
     tile.owner_id = city.owner_id
+    from aig.knowledge import update_knowledge
+    update_knowledge(state)

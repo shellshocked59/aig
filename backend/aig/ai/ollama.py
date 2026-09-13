@@ -1,33 +1,37 @@
 """Ollama strategic planning only: no GameState, commands, or tactical rules."""
 
 from copy import deepcopy
-from dataclasses import asdict
 from http.client import HTTPException
+import socket
 from time import perf_counter
 from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from aig.ai.plan_schema import PLAN_SCHEMA_VERSION, canonical_json, parse_plan, plan_json_schema, strict_json
+from aig.ai.plan_schema import PLAN_SCHEMAS, canonical_json, parse_plan, plan_json_schema, strict_json
+from aig.ai.model_profiles import public_ollama_configuration
+from aig.ai.prompts import resolve_prompt
 from aig.ai.strategy import StrategicPlan, StrategicState, StrategyProviderError
 from aig.settings import OllamaSettings
-from aig.state import Technology, UnitType
+from aig.versions import LATEST_PLAN_SCHEMA_VERSION, resolve_version
 
-PROMPT_VERSION = "strategy-v1"
-SYSTEM_PROMPT = """Prompt version: strategy-v1
-You are the high-level strategic planner for one faction in a small deterministic
-turn-based empire game. Choose a strategy using only the supplied state/options.
-You do not control individual movement or combat. A deterministic executor carries
-out your plan. Use only supplied enemy player/city IDs and priority options.
-Priorities are ordered preferences; future unlocks and known research are allowed.
-The executor selects currently legal options. Preserve a sensible previous plan
-unless the situation justifies changing it. Return only the StrategicPlan JSON
-required by the schema, with all six fields. Do not explain your answer."""
+# Public compatibility exports; V1 content retains its original strategy-v1 label.
+PROMPT_VERSION, SYSTEM_PROMPT = resolve_prompt()
 METRICS = ("prompt_eval_count", "eval_count", "prompt_eval_duration", "eval_duration", "total_duration")
 
 
 def transport_failure_category(error: Exception) -> str:
     """Preserve transport distinctions without changing retry/fallback policy."""
+    if isinstance(error, HTTPError):
+        category = {401: "authentication_failure", 403: "permission_denied",
+                    404: "model_not_available", 429: "rate_limit"}.get(error.code)
+        if category:
+            return category
+    reason = error.reason if isinstance(error, URLError) else error
+    if isinstance(reason, socket.gaierror):
+        return "dns_failure"
+    if isinstance(reason, ConnectionError):
+        return "connection_failure"
     if isinstance(error, HTTPError) or (
             isinstance(error, StrategyProviderError) and str(error).startswith("Ollama HTTP status")):
         return "non_2xx"
@@ -50,12 +54,17 @@ class OllamaStrategyProvider:
     name = "ollama"
 
     def __init__(self, settings: OllamaSettings, *,
-                 requester: Callable[[str, bytes, float], str] = post_json):
+                 requester: Callable[[str, bytes, float], str] = post_json,
+                 prompt_version=None, plan_schema_version=None, repair: bool = True):
         # Preserve settings parsing compatibility, but never enable reasoning or streaming.
         if settings.think or settings.stream:
             raise ValueError("Ollama strategic planning requires AIG_OLLAMA_THINK=false and AIG_OLLAMA_STREAM=false")
+        self.prompt_version, self.system_prompt = resolve_prompt(prompt_version)
+        self.schema_version = resolve_version(plan_schema_version, available=PLAN_SCHEMAS,
+                                              latest=LATEST_PLAN_SCHEMA_VERSION)
         self.settings = settings
         self.requester = requester
+        self._repair = repair
         self._last_trace: dict | None = None
 
     @property
@@ -67,26 +76,27 @@ class OllamaStrategyProvider:
         settings = self.settings
         state_json = canonical_json(state)
         previous_json = canonical_json(previous_plan.to_dict() if previous_plan else None)
-        options = {"production_priority": [v.value for v in UnitType],
-                   "research_priority": [v.value for v in Technology]}
+        schema = plan_json_schema(self.schema_version)
+        options = {field: schema["properties"][field]["items"]["enum"]
+                   for field in ("production_priority", "research_priority")}
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": f"CURRENT STATE:\n{state_json}\n\nPREVIOUS PLAN:\n{previous_json}"
              f"\n\nPRIORITY OPTIONS:\n{canonical_json(options)}"},
         ]
         trace = dict(turn=state["turn"], player_id=state["player_id"],
                      strategic_state=deepcopy(state), previous_plan=previous_plan.to_dict() if previous_plan else None,
                      resulting_plan=None, requested_provider=self.name, actual_provider=None,
-                     model=settings.model, model_configuration=asdict(settings),
-                     prompt_version=PROMPT_VERSION, schema_version=PLAN_SCHEMA_VERSION,
-                     system_content=SYSTEM_PROMPT, serialized_state=state_json,
+                     model=settings.model, model_configuration=public_ollama_configuration(settings),
+                     prompt_version=self.prompt_version, schema_version=self.schema_version,
+                     system_content=self.system_prompt, serialized_state=state_json,
                      serialized_previous_plan=previous_json, attempts=[], retry_count=0,
                      fallback_used=False, wall_clock_seconds=0.0)
         self._last_trace = trace  # Only the latest invocation is retained by the provider.
-        for attempt in range(2):
+        for attempt in range(2 if self._repair else 1):
             trace["retry_count"] = attempt
             payload = dict(model=settings.model, stream=settings.stream, think=settings.think,
-                           keep_alive=settings.keep_alive, messages=messages, format=plan_json_schema(),
+                           keep_alive=settings.keep_alive, messages=messages, format=plan_json_schema(self.schema_version),
                            options=dict(num_ctx=settings.context_size, temperature=settings.temperature,
                                         seed=settings.seed, num_predict=settings.max_output_tokens))
             record = dict(messages=deepcopy(messages), raw_content=None, metrics={})
@@ -121,14 +131,15 @@ class OllamaStrategyProvider:
                 if response.get("done") is not True or response.get("error"):
                     raise ValueError("Ollama response did not complete successfully")
                 category = "schema_validation"
-                plan = parse_plan(content, state)
+                plan = parse_plan(content, state, self.schema_version)
             except (ValueError, RecursionError) as error:
                 reason = str(error)[:300] if isinstance(error, ValueError) else "JSON nesting is too deep"
                 record["error"] = reason
                 record["error_category"] = getattr(error, "category", category)
-                if attempt == 1:
+                if attempt == 1 or not self._repair:
                     trace["error"] = reason
-                    raise StrategyProviderError(f"Ollama returned two invalid responses: {reason}") from error
+                    label = "two invalid responses" if self._repair else "an invalid plan"
+                    raise StrategyProviderError(f"Ollama returned {label}: {reason}") from error
                 # Repair feedback stays concise; exact invalid output is in the detached trace.
                 messages = [*messages, {"role": "user", "content":
                     f"Your previous response was invalid: {reason}. Return a corrected StrategicPlan "

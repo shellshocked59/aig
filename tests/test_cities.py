@@ -375,7 +375,7 @@ class CityOccupancyTests(unittest.TestCase):
         apply_command(state, MoveUnit("A", "unit-1", Position(2, 0)))
         state.validate()
 
-    def test_enemy_city_blocks_destination_for_all_unit_types_and_other_owners(self):
+    def test_enemy_city_entry_depends_on_capture_capability(self):
         for unit_type in UnitType:
             for owner in "BC":
                 with self.subTest(unit_type=unit_type, owner=owner):
@@ -383,12 +383,18 @@ class CityOccupancyTests(unittest.TestCase):
                     state.add_city(city(owner=owner, position=Position(1, 0)))
                     before = deepcopy(state)
                     self.assertFalse(state.can_enter("A", Position(1, 0)))
-                    self.assertIsNone(find_path(state, state.units["unit-1"], Position(1, 0)))
-                    with self.assertRaises(ValueError):
-                        apply_command(state, MoveUnit("A", "unit-1", Position(1, 0)))
                     with self.assertRaises(ValueError):
                         state.add_unit("A", unit_type, Position(1, 0))
                     self.assertEqual(state, before)
+                    if unit_type.can_capture:
+                        self.assertIsNotNone(find_path(state, state.units["unit-1"], Position(1, 0)))
+                        apply_command(state, MoveUnit("A", "unit-1", Position(1, 0)))
+                        self.assertEqual(state.cities["city-1"].owner_id, "A")
+                    else:
+                        self.assertIsNone(find_path(state, state.units["unit-1"], Position(1, 0)))
+                        with self.assertRaises(ValueError):
+                            apply_command(state, MoveUnit("A", "unit-1", Position(1, 0)))
+                        self.assertEqual(state, before)
 
     def test_pathfinder_routes_around_enemy_city_deterministically(self):
         state = movement_state(width=3, height=3)
@@ -536,15 +542,17 @@ class CityEliminationTests(unittest.TestCase):
         self.assertEqual(state.tiles[Position(0, 0)].owner_id, "A")
         state.validate()
 
-    def test_removing_final_city_preserves_faction_activation_units_and_ownership(self):
+    def test_removing_final_city_eliminates_owner_and_preserves_tiles(self):
         state = founding_state()
         apply_command(state, founding_command())
         state.add_unit("A", UnitType.SCOUT, Position(0, 0))
-        expected = deepcopy(state)
-        expected.cities.clear()
+        tiles = deepcopy(state.tiles)
         self.assertIsNone(state.remove_city("city-1"))
-        self.assertEqual(state, expected)
-        self.assertFalse(state.players["A"].eliminated)
+        self.assertTrue(state.players["A"].eliminated)
+        self.assertFalse(any(u.owner_id == "A" for u in state.units.values()))
+        self.assertEqual(state.active_player_id, "B")
+        self.assertEqual(state.tiles, tiles)
+        expected = deepcopy(state)
         with self.assertRaisesRegex(ValueError, "unknown city"):
             state.remove_city("city-1")
         self.assertEqual(state, expected)
@@ -590,7 +598,7 @@ class CitySnapshotTests(unittest.TestCase):
         state = self.populated_state()
         before = deepcopy(state)
         snapshot = to_snapshot(state)
-        self.assertEqual(snapshot["schema_version"], 8)
+        self.assertEqual(snapshot["schema_version"], 12)
         restored = from_snapshot(json.loads(json.dumps(snapshot, allow_nan=False)))
         self.assertEqual(restored, before)
         self.assertEqual(state, before)
@@ -616,7 +624,7 @@ class CitySnapshotTests(unittest.TestCase):
         self.assertEqual(set(baseline["cities"][0]),
                          {"id", "owner_id", "name", "population", "position",
                           "food_stored", "production_stored", "production_target"})
-        self.assertEqual(set(baseline["tiles"][0]), {"position", "terrain", "owner_id"})
+        self.assertEqual(set(baseline["tiles"][0]), {"position", "terrain", "owner_id", "resource"})
         for collection in ("cities", "tiles"):
             for field in baseline[collection][0]:
                 with self.subTest(collection=collection, missing=field):
@@ -699,9 +707,11 @@ class CitySnapshotTests(unittest.TestCase):
             state.cities["city-1"].population = 21
             state.cities["city-1"].position = Position(3, 3)
             state.cities["city-1"].owner_id = "B"
+            state.players["B"].has_ever_owned_city = True
+            state._eliminate_if_cityless("A")
             state.tiles[Position(3, 3)].owner_id = "B"
             state.tiles[Position(3, 3)].terrain = Terrain.FOREST
-            state.units["unit-2"].hp = 1
+            self.assertNotIn("unit-2", state.units)
             state.validate()
         self.assertEqual(copies[0], copies[1])
         self.assertEqual(copies[2], source)

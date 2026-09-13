@@ -279,18 +279,19 @@ class OpenAIProviderTests(unittest.TestCase):
                 self.assertNotIn(KEY, canonical_json(dto))
                 self.assertNotIn(KEY, canonical_json(app.state.session.ai.inference_traces))
                 self.assertNotIn(KEY, canonical_json(to_snapshot(app.state.session._state)))
-                self.assertEqual(SCHEMA_VERSION, 8)
+                self.assertEqual(SCHEMA_VERSION, 12)
 
     def test_benchmark_explicit_selection_telemetry_and_fallback_contamination(self):
         settings = Settings(ai=AiSettings(strategy_provider="ollama"), openai=self.settings)
         with patch("aig.ai.openai.OpenAI", return_value=self.client):
             self.assertIsInstance(make_provider("openai", settings), OpenAIStrategyProvider)
         for fails in (False, True):
-            self.client.responses.create.side_effect = None
-            self.client.responses.create.return_value = response("invalid") if fails else response()
+            self.client.responses.create.side_effect = ([response()] + [response("invalid")] * 4) if fails else None
+            self.client.responses.create.return_value = response()
             with TemporaryDirectory() as directory:
-                report = benchmark(output=Path(directory), games=1, turns=1, provider_b="openai", settings=settings,
-                                   provider_factory=lambda name, _: self.provider if name == "openai" else HeuristicStrategyProvider())
+                report = benchmark(scenario_version="v3", output=Path(directory), games=1, turns=1, provider_b="openai", settings=settings,
+                                   provider_factory=lambda name, _: self.provider if name == "openai" else HeuristicStrategyProvider(),
+                                   allow_provider_fallback=True)
                 run = report["runs"][1]
                 self.assertEqual(run["pureProviderRun"], not fails)
                 self.assertEqual(run["fallbackCount"], 2 if fails else 0)
@@ -301,6 +302,7 @@ class OpenAIProviderTests(unittest.TestCase):
                 self.assertEqual(usage["reasoning_tokens"]["total"], 20 if fails else 10)
                 for path in Path(directory).rglob("*.json*"):
                     self.assertNotIn(KEY, path.read_text(encoding="utf-8"))
+        self.client.responses.create.side_effect = None
         self.client.responses.create.return_value = response()
         with TemporaryDirectory() as directory, patch("aig.ai.benchmark.load_settings", return_value=settings), \
                 patch("aig.ai.openai.OpenAI", return_value=self.client), patch("builtins.print"):

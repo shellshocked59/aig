@@ -130,9 +130,13 @@ def apply_command(state: GameState, command: Command) -> None:
         raise ValueError("no active activation: commands require a game in progress")
     if command.actor_id != state.active_player_id:
         raise ValueError("only the active player may issue commands")
+    system = state.is_barbarian(command.actor_id)
+    if system and not isinstance(command, (MoveUnit, AttackUnit, EndActivation)):
+        raise ValueError("system faction may only move, attack, or end activation")
 
     if isinstance(command, EndActivation):
-        resolve_player_economy(state, command.actor_id)
+        if not system:
+            resolve_player_economy(state, command.actor_id)
         state.finish_activation()
     elif isinstance(command, EliminatePlayer):
         # Self-elimination already ends the activation within the state rules.

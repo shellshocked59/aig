@@ -1,5 +1,40 @@
 # Architecture
 
+## Environment V5 runtime update
+
+The current runtime is Environment V5, snapshot v12. See
+[the authoritative V5 rules and lifecycle](environment-v5.md). Capture is atomic
+with MoveUnit; historical city ownership and conquest result are persisted.
+City removal now evaluates zero-city elimination. Existing sections below also
+record earlier implementation stages; references to invulnerable cities or
+snapshot v8/v9 describe those stages and are superseded by V5.
+
+
+## Independent experiment artifacts
+
+`aig.versions` centralizes explicit latest pointers and a small reusable resolver.
+Frozen prompt strings (`ai/prompts.py`), logical schema JSON (`ai/plan_schema.py`),
+scenario factories (`scenarios.py`) and non-secret model profiles
+(`ai/model_profiles.py`) are selected independently. Environment and benchmark
+format registries describe their respective domains. Provider constructors
+resolve prompt/schema IDs before inference and trace their concrete values.
+`ai/experiments.py` builds allowlisted per-run manifests and best-effort local Git
+provenance; `ai/benchmark.py` associates them with the existing trace directories.
+
+Versioned experiment artifacts remain selectable where practical. Historical
+game-engine behavior is reproduced through the recorded source revision rather
+than by accumulating compatibility branches throughout game logic. Environment
+selection is provenance metadata, never a game-rule dispatch switch. Snapshot
+schema is v9 and does not contain artifact selectors or runtime metadata.
+
+`AIG_STRATEGY_PROMPT_VERSION` passes through AI settings and backend-only Compose
+environment configuration. Default/empty/latest resolves to the concrete latest
+version; benchmark flags can pin historical artifacts and model profiles. Runtime
+inference overrides are recorded as custom when they differ from a frozen profile.
+See [the exact domains, settings, CLI and manifest contract](benchmarking.md#experiment-artifacts-and-provenance)
+and [preserved baseline mapping](baselines.md). Future versions add content and
+move the relevant latest pointer without rewriting historical artifacts.
+
 The manually playable browser slice implements this runtime boundary:
 
 ```text
@@ -24,7 +59,7 @@ The cloud request path is **Browser -> Python API -> OpenAI**.
 `OpenAIStrategyProvider` uses the official synchronous Python SDK and Responses
 API, configured by frozen `OpenAISettings` under application `Settings`.
 Configuring a key does not change provider selection. Heuristic and Ollama modes
-remain usable without it, and snapshot schema v8 and gameplay are unchanged.
+remain usable without it, and snapshot schema v9 and gameplay are unchanged.
 
 `load_settings()` remains explicit at the application boundary and never mutates
 `os.environ`. Non-empty process values override the root/local env file, then
@@ -87,12 +122,13 @@ the mutable engine. `OllamaStrategyProvider` implements this same interface; the
 executor has no provider, HTTP, prompt, retry, or model dependency.
 
 `StrategicState` is a TypedDict made exclusively of ordinary JSON dictionaries,
-lists, strings, integers, and nulls. It includes player ID, global turn, gold,
+lists, strings, integers, booleans, and nulls. It includes player ID, global turn, gold,
 stored science, population-derived science income, current/known/available
 research, unlocked production choices, own/enemy cities (IDs, owners, coordinates,
 population, production) and units (IDs, owners, type, coordinates, HP, approximate
-strength). It omits terrain grids, snapshots, configuration and engine objects.
-There is no fog, so all live opponents are visible. Approximate military strength
+strength). Environment V2 adds explored terrain and global civilization summaries;
+hidden cities retain only remembered identity/location and invisible units are absent.
+Snapshots, configuration and engine objects are omitted. Approximate global military strength
 is the sum of `max(melee strength, ranged strength) * HP // 100`; Settlers add zero.
 This estimate is for strategy only, never a replacement for combat damage rules.
 
@@ -107,9 +143,9 @@ The heuristic expands when cityless with a Settler, defends when nearby enemy
 strength exceeds twice nearby friendly strength, and attacks with at least two
 combat units and an enemy city. Local means within Chebyshev distance 3 of an own
 city (or own unit if cityless); friendly strength is measured near those threats.
-Otherwise it expands. The target is the nearest enemy city to any own city, or
+Otherwise it expands. The target is the nearest discovered enemy city to any own city, or
 own unit when cityless, breaking ties by city ID. Without enemy cities it selects
-the nearest enemy unit's faction. Fewer than two combat units prioritizes Warrior,
+the nearest visible enemy unit's faction. Fewer than two combat units prioritizes Warrior,
 Archer, Spearman; adequate forces with fewer than two cities prioritizes Settler,
 Archer, Spearman, Warrior; otherwise Archer, Spearman, Warrior. Research prefers
 Archery, Bronze Working, then Agriculture for nonstandard technology-free setups.
@@ -160,7 +196,7 @@ interval (default 5), or immediately if the target city disappears/changes owner
 or the primary enemy disappears/is eliminated. A backwards turn also resets the
 plan. Replanning passes the previous plan to the provider. Tactics and available
 choices are checked against current state every activation even with a reused plan.
-Reset discards controllers and traces. They are not persisted in snapshot v8.
+Reset discards controllers and traces. They are not persisted in snapshot v9.
 
 `AiOrchestrator.run_active_ai_activation` returns None on human, pre-game or
 terminal states. `advance_until_human` handles consecutive AI factions, stops at
@@ -240,7 +276,7 @@ does not simulate rollback or run a second copy of the rules.
 City allocation tries `city-1`, `city-2`, etc., skips existing live city IDs, and
 advances the application counter only after successful founding. Reset replaces
 the state and counter together. It uses neither timestamps nor UUIDs and never
-changes the engine's unit allocator or snapshot v8. This is sufficient because
+changes the engine's unit allocator or snapshot v9. This is sufficient because
 the application supports no persistence/import/replay. Any later session loading
 or replay feature must explicitly preserve the counter or recorded allocated IDs;
 it cannot treat this ephemeral counter as persisted engine state.
@@ -331,7 +367,7 @@ options. Future unlocks and already-known technologies remain legal preferences,
 as in heuristic plans; the unchanged executor filters availability. No map grid,
 GameState dump, tactical instructions, explanations or chain-of-thought requests.
 
-`ai/plan_schema.py` defines `strategic-plan-schema-v1`, independent of snapshot v8.
+`ai/plan_schema.py` defines `strategic-plan-schema-v1`, independent of snapshot v9.
 `format` contains a concrete JSON Schema for the existing six-field plan. All
 fields are required, extra properties forbidden, IDs nullable, enum values
 explicit, and priorities nonempty unique arrays. `parse_plan` strictly checks
@@ -354,6 +390,23 @@ remain distinct. Plan lifetime is still five global turns by default; missing,
 expired, rewound or invalid-target plans replan, while young valid plans make no
 HTTP request. Fallback plans share this lifetime, avoiding repeated outage calls.
 `AiExecutor` and its result/command trace representation remain unchanged.
+
+The `StrategyProvider` previous-plan contract is a currently reference-valid
+`StrategicPlan` or `None`. Before invoking either the selected provider or its
+heuristic fallback, the controller clears provider context for `invalid_target`:
+an unknown, self or eliminated primary enemy; a target city not legitimately known,
+visibly absent, owned by self or an eliminated player; or a city whose known owner
+no longer matches the primary enemy. It uses the existing knowledge-based checks,
+not hidden live ownership/existence. Valid expired plans and valid plans replanned
+for significant events retain continuity. Resource discovery alone does not replan.
+OpenAI, Ollama and heuristic providers all receive these same semantics.
+
+`previous_plan` in controller/provider traces always describes the actual provider
+input. On invalidation only, `invalidated_previous_plan` separately retains the
+old plan for debugging and change/elimination metrics; `replan_reason` remains
+`invalid_target`. This diagnostic is never inserted into the model prompt or
+GameState/snapshot. Conquest victory clears `active_player_id`, so orchestration
+stops without a subsequent provider call.
 
 The provider retains one detached invocation trace, including exact messages for
 each attempt, serialized state/previous plan, raw content, final validated plan,
@@ -467,7 +520,7 @@ Controllers are `human` or `ai`. AI-only and mixed human/AI games use the same s
 
 `backend/aig/snapshots.py` defines `Snapshot`, a JSON-compatible dictionary contract, plus explicit `to_snapshot(state)` and `from_snapshot(data)` conversions. Version 8 contains `schema_version`, `config` (including `seed` and `debug_mode`), `turn`, `turn_order`, `active_player_id`, `game_map` (width, height, origin), `next_unit_id`, and arrays of `players`, `tiles`, `cities`, and `units`. Each player contains `id`, `controller`, the required boolean `eliminated`, non-negative integer `gold` and `science_stored`, nullable `research_target`, and a `researched_technologies` array of technology strings sorted by value. Each tile contains `position`, `terrain` and required nullable `owner_id`; each city contains `id`, `owner_id`, `position`, `name`, `population`, `food_stored`, `production_stored` and nullable `production_target` (a unit type string or null); each unit contains `id`, `owner_id`, `position`, `unit_type`, `moves_remaining` and `hp`. Derived combat stats, range, maximum HP, unit production costs and production remaining are not serialized. Coordinates are `{ "x": integer, "y": integer }` objects. Consumers resolve the active controller through `active_player_id` and the player's `controller`; it is not duplicated in the snapshot. Python exposes the same lookup as a read-only `GameState.active_controller` property. Entity arrays are canonicalized by ID, and tiles by `(y, x)`; array order carries no gameplay meaning. `turn_order` explicitly determines faction activation order and is preserved exactly. No separate rules version is declared.
 
-Conversion creates detached data and revalidates mutable state. Loading rejects unsupported schema versions, missing/unknown fields, invalid types, duplicate IDs/coordinates, dangling references, illegal terrain/occupancy, invalid movement and invalid HP with `ValueError`. It performs no coercion, clamping or migration. Versions 1 through 7 are rejected explicitly before checking the v8 shape. The loader never supplies missing state, resolves economy, collects gold/production/science, completes research, starts the game, consumes food, grows cities, completes production, heals units, refreshes movement, or restarts an activation. Food, production, gold and science must be non-negative integers, rejecting booleans and floats. City spacing is validated on load; invalid saves are never repaired. Direct mutations can temporarily invalidate state; callers can use `state.validate()`, and snapshot export always validates it.
+Conversion creates detached data and revalidates mutable state. Loading rejects unsupported schema versions, missing/unknown fields, invalid types, duplicate IDs/coordinates, dangling references, illegal terrain/occupancy, invalid movement and invalid HP with `ValueError`. It performs no coercion, clamping or migration. Versions 1 through 8 are rejected explicitly before checking the v9 shape. The loader never supplies missing state, resolves economy, collects gold/production/science, completes research, starts the game, consumes food, grows cities, completes production, heals units, refreshes movement, or restarts an activation. Food, production, gold and science must be non-negative integers, rejecting booleans and floats. City spacing is validated on load; invalid saves are never repaired. Direct mutations can temporarily invalidate state; callers can use `state.validate()`, and snapshot export always validates it.
 
 The movement slice started from a checkout with schema v2 and 64 tests, which lacked the previously planned map/terrain and live-unit placement slices. Version 3 therefore adds those minimal prerequisites together with movement. Existing `TileState`, `UnitState`, city records and activation APIs remain; the earlier elimination test that retained units now requires live-unit cleanup.
 
@@ -632,7 +685,7 @@ Friendly units may stack without a limit: a unit may pass through and stop on fr
 
 The implementation uses breadth-first search because all edges cost 1. Neighbors are always visited in **N, NE, E, SE, S, SW, W, NW** order. A FIFO queue and first-visit predecessor links choose a stable shortest path; dictionary/set iteration never chooses neighbors. Every entered tile is checked for bounds, terrain, hostile units and enemy cities through `GameState.can_enter()`. Future variable costs can replace this isolated BFS with Dijkstra/A* without changing destination-based command intent.
 
-Pathfinding is deterministic executor infrastructure, not controller strategy. The UI and shared AI executor reuse it; neither strategy provider supplies intermediate movement tiles. It contains no AI/LLM logic, combat resolution, zones of control, fog, borders or roads. City occupancy is an entry restriction, without city combat or capture.
+Authoritative pathfinding validates commands. AI planning uses the separate filtered knowledge view; neither strategy provider supplies intermediate movement tiles. It contains no AI/LLM logic, combat resolution, zones of control, fog, borders or roads. City occupancy is an entry restriction, without city combat or capture.
 
 ## Deterministic unit combat
 
@@ -727,13 +780,13 @@ Elimination never calls economy: active elimination removes cities/units and
 selects exactly one successor without generating science or completing research;
 inactive elimination resolves no research for either player.
 
-Snapshot v8 adds exactly the three persistent player research fields. Technology
+Snapshot v8 introduced the three persistent player research fields; current v9 also persists player knowledge. Technology
 strings serialize in ascending value order, independent of frozenset iteration.
 Costs, prerequisites, unlock tables, income and available options are never
 serialized. All earlier fields remain, including `next_unit_id`. Loading and
 copying preserve pre-game, mid-research and already-affordable state without
 starting play, collecting science, completing research/production or refreshing
-movement. Strict v8 loading rejects earlier schemas instead of migrating them.
+movement. Strict v9 loading rejects earlier schemas instead of migrating them.
 
 ## Deterministic game setup and start
 
@@ -779,3 +832,83 @@ is no procedural generation. `human_vs_ai_demo_setup()` reuses the same map and
 starts while changing only B to `ControllerType.AI`; A begins as the active human.
 `tests/test_setup.py` exercises a complete two-faction opening, research/unit
 completion, deterministic snapshots, and every README Python example.
+
+
+## Environment V2: three information classes
+
+`knowledge.py` owns sight and discovery for engine, planning and public views.
+
+1. **Global civilization information:** faction identity/elimination, total military
+   strength, and the existing research/economy scoreboard. Strength remains global;
+   it does not expose military types, HP, stacks or locations. StrategicState includes
+   per-faction global strength/researched technologies plus its existing aggregate
+   enemy strength. Public DTOs retain the existing civilization scoreboard fields.
+2. **Persistent discovered knowledge:** each `PlayerState.knowledge` holds a set of
+   explored `Position`s and an ID-keyed dictionary of frozen `KnownCity(city_id,
+   owner_id, position)` records. Terrain is static, so only coordinates are stored;
+   the map is not copied per faction. Hidden ownership is not inferred from live
+   tiles. Explored empty ground never reveals a city founded there later out of sight.
+3. **Current tactical visibility:** enemy units/types/HP/stacks and changing enemy
+   city details require current sight. There is no last-known unit memory. A hidden
+   remembered city exposes identity/location, `currently_visible=false` and
+   `live_exists=null`; checking hidden removal would itself leak information.
+   A visible remembered site with no live city returns `live_exists=false`. Historical
+   city records remain after removal/elimination. The observer can inspect live truth.
+
+Sight is the union of bounded Chebyshev squares from live own units/cities: Settler,
+Warrior, Archer and Spearman radius 2; Scout radius 3; city radius 2. Diagonals count.
+Mountains/forest do not block sight; hills/water do not modify it. Eliminated factions
+have no current sight and retain historical knowledge.
+
+`create_game()` leaves every knowledge structure empty. `start_game()` discovers
+both factions' legitimate starting areas before activating the first faction.
+Successful movement, founding, placement during active play, combat advance and
+production update discovery in the domain for all factions, including inactive
+observers. Querying, serializing and loading never discovers anything.
+
+Heuristic, Qwen and Luna receive the same detached StrategicState. Own state remains
+available; hidden spatial data never crosses this boundary. Factual fields include
+`visible_enemy_military_strength`, `nearest_visible_enemy_unit_distance`, and
+`explored_terrain`, without precomputed strategic conclusions. Plan/schema/prompt
+artifacts stay V1. The original prompt already requires using only supplied data.
+
+The executor creates a `PlanningView` containing only own state, currently visible
+units, known cities and explored/currently visible terrain. Read-only movement and
+founding queries operate on that view. Missing territory is not traversable in this
+planning view: frontier destinations are known reachable positions near unexplored
+coordinates. Scout ranking maximizes expected geometric reveal, then shortest route,
+then y/x. Unit iteration uses stable IDs. No hidden yields, blockers, route failures,
+or undiscovered target positions rank decisions. Scouts with an immediate legal
+attack use it; otherwise they seek frontiers. After the first military need, the
+executor can order one Scout when no Scout is owned/being built and map remains
+unexplored. This conventional rule is shared by all providers. Fully explored or
+unreachable frontiers produce no exploration move. Settlers may also seek frontiers.
+
+Every AI move is an adjacent command; sight covers entry before authoritative
+validation. `apply_command` retains the original engine pathfinder and rules.
+Infrastructure allocates collision-free city IDs against truth; it does not use
+that lookup for spatial choices. There is no hidden-state retry/ranking loop.
+
+Plan reuse remains five global turns. At activation planning, the first discovered
+city and first observed military contact can each cause one early replan, with a
+reason in backend traces. Simultaneous contacts coalesce into one call. Ordinary
+terrain reveals do not trigger replanning. Target validity uses remembered cities,
+visible absence, and globally known elimination, never hidden live-city lookup.
+The ephemeral controller remembers whether it has handled each significant contact;
+that cache is deliberately not saved. Contact metrics observe every command, while
+planning samples the current knowledge/visibility at activation boundaries.
+
+`public_state()` uses the active human in hot-seat play; before start/after terminal
+state it selects the first human ID. During an AI activation it retains the first
+human perspective. With no human, it returns no spatial information. Tiles carry
+`explored`/`visible`; unexplored terrain is null and explored hidden terrain is dimmed.
+The browser retains city memory markers and removes invisible units. Normal HTTP
+responses omit AI plans, command coordinates and discovery-replan metadata. Operational
+provider/timing summaries remain. `observer_state()` is an explicitly omniscient
+Python/debug function with no HTTP observer endpoint; save snapshots and benchmark
+observers also retain truth and never feed a provider.
+
+Snapshot v9 requires `knowledge` on every player. Explored coordinates serialize by
+(y,x), remembered cities by ID. Derived sight and visible units are never persisted.
+Loading validates bounds, owners, IDs, duplicate positions and exact record shapes,
+and rejects v8 explicitly. It performs no game transition or discovery.

@@ -1,4 +1,4 @@
-"""Version 8 JSON data contract, shared initially by saves and clients.
+"""Version 12 JSON persistence contract, including historical ownership and victory.
 
 Explicit conversion keeps wire formats independent of the domain dataclasses.
 Future audience-specific snapshots can have their own types and converters here.
@@ -11,17 +11,21 @@ from aig.state import (
     ControllerType,
     GameConfig,
     GameMap,
-    GameState,
+    GameState, GameResult, VictoryType,
     PlayerState,
+    PlayerKnowledge,
+    KnownCity,
+    KnownCamp, BarbarianCamp, FactionKind,
     Position,
     TileState,
+    ResourceType,
     Terrain,
     Technology,
     UnitState,
     UnitType,
 )
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 12
 
 JSONValue = None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
 
@@ -39,16 +43,20 @@ class ConfigData(TypedDict):
 class PlayerData(TypedDict):
     id: str
     controller: str
+    kind: str
     eliminated: bool
+    has_ever_owned_city: bool
     gold: int
     science_stored: int
     research_target: str | None
     researched_technologies: list[str]
+    knowledge: dict
 
 
 class TileData(TypedDict):
     position: PositionData
     terrain: str
+    resource: str | None
     owner_id: str | None
 
 
@@ -76,6 +84,7 @@ class UnitData(OwnedEntityData):
     unit_type: str
     moves_remaining: int
     hp: int
+    home_camp_id: str | None
 
 
 class Snapshot(TypedDict):
@@ -90,6 +99,8 @@ class Snapshot(TypedDict):
     units: list[UnitData]
     game_map: MapData
     next_unit_id: int
+    camps: list[dict]
+    result: dict | None
 
 
 class SnapshotEnvelope(TypedDict):
@@ -120,18 +131,30 @@ def to_snapshot(state: GameState) -> Snapshot:
         "turn": state.turn,
         "turn_order": list(state.turn_order),
         "active_player_id": state.active_player_id,
+        "result": (dict(winner_player_id=state.result.winner_player_id,
+                        victory_type=state.result.victory_type.value) if state.result else None),
         "players": [
-            {"id": player.id, "controller": player.controller.value,
+            {"id": player.id, "controller": player.controller.value, "kind": player.kind.value,
              "eliminated": player.eliminated, "gold": player.gold,
+             "has_ever_owned_city": player.has_ever_owned_city,
              "science_stored": player.science_stored,
              "research_target": (player.research_target.value
                                  if player.research_target is not None else None),
-             "researched_technologies": sorted(tech.value for tech in player.researched_technologies)}
+             "researched_technologies": sorted(tech.value for tech in player.researched_technologies),
+             "knowledge": {
+                 "discovered_camps": [dict(id=c.id, position=_position_data(c.position), last_seen_turn=c.last_seen_turn)
+                     for c in sorted(player.knowledge.discovered_camps.values(), key=lambda c:c.id)],
+                 "explored_positions": [_position_data(p) for p in sorted(
+                     player.knowledge.explored_positions, key=lambda p: (p.y, p.x))],
+                 "discovered_cities": [dict(city_id=c.city_id, owner_id=c.owner_id,
+                                            position=_position_data(c.position))
+                                       for c in sorted(player.knowledge.discovered_cities.values(), key=lambda c: c.id)],
+             }}
             for player in sorted(state.players.values(), key=lambda player: player.id)
         ],
         "tiles": [
             {"position": _position_data(tile.position), "terrain": tile.terrain.value,
-             "owner_id": tile.owner_id}
+             "owner_id": tile.owner_id, "resource": tile.resource.value if tile.resource else None}
             for tile in sorted(state.tiles.values(), key=lambda tile: (tile.position.y, tile.position.x))
         ],
         "cities": [
@@ -143,7 +166,7 @@ def to_snapshot(state: GameState) -> Snapshot:
         ],
         "units": [
             {**_owned_data(unit), "unit_type": unit.unit_type.value,
-             "moves_remaining": unit.moves_remaining, "hp": unit.hp}
+             "moves_remaining": unit.moves_remaining, "hp": unit.hp, "home_camp_id": unit.home_camp_id}
             for unit in sorted(state.units.values(), key=lambda unit: unit.id)
         ],
         "game_map": {
@@ -151,6 +174,7 @@ def to_snapshot(state: GameState) -> Snapshot:
             "origin": _position_data(state.game_map.origin),
         },
         "next_unit_id": state.next_unit_id,
+        "camps": [dict(id=c.id, position=_position_data(c.position)) for c in sorted(state.camps.values(), key=lambda c:c.id)],
     }
 
 
@@ -173,8 +197,28 @@ def _position(value: object) -> Position:
     return Position(x=data["x"], y=data["y"])
 
 
+def _knowledge(value: object) -> PlayerKnowledge:
+    data = _record(value, {"explored_positions", "discovered_cities", "discovered_camps"}, "knowledge")
+    positions = [_position(p) for p in _records(data["explored_positions"], {"x", "y"}, "explored_positions")]
+    if len(set(positions)) != len(positions):
+        raise ValueError("duplicate explored position")
+    cities = {}
+    for row in _records(data["discovered_cities"], {"city_id", "owner_id", "position"}, "discovered_cities"):
+        city = KnownCity(row["city_id"], row["owner_id"], _position(row["position"]))
+        if city.id in cities:
+            raise ValueError("duplicate known city")
+        cities[city.id] = city
+    camps = {}
+    for row in _records(data["discovered_camps"], {"id", "position", "last_seen_turn"}, "discovered_camps"):
+        camp = KnownCamp(row["id"], _position(row["position"]), row["last_seen_turn"])
+        if camp.id in camps:
+            raise ValueError("duplicate known camp")
+        camps[camp.id] = camp
+    return PlayerKnowledge(set(positions), cities, camps)
+
+
 def from_snapshot(data: object) -> GameState:
-    """Restore v8 data, raising ValueError for malformed or unsupported snapshots.
+    """Restore v12 data, raising ValueError for malformed or unsupported snapshots.
 
     State invariants are validated; no coercion, migration, ID generation, or
     economy resolution, movement refresh, or activation advancement is performed.
@@ -206,9 +250,11 @@ def from_snapshot(data: object) -> GameState:
             raise ValueError("player.researched_technologies must be an array of technology strings")
         if len(set(technologies)) != len(technologies):
             raise ValueError("duplicate researched technology")
+        knowledge = _knowledge(row["knowledge"])
         player = PlayerState(
-            id=row["id"], controller=ControllerType(row["controller"]),
+            knowledge=knowledge, id=row["id"], controller=ControllerType(row["controller"]), kind=FactionKind(row["kind"]),
             eliminated=row["eliminated"], gold=row["gold"],
+            has_ever_owned_city=row["has_ever_owned_city"],
             science_stored=row["science_stored"],
             research_target=Technology(target) if target is not None else None,
             researched_technologies=frozenset(Technology(t) for t in technologies),
@@ -224,6 +270,7 @@ def from_snapshot(data: object) -> GameState:
         tile = TileState(
             position=_position(row["position"]), terrain=Terrain(row["terrain"]),
             owner_id=row["owner_id"],
+            resource=ResourceType(row["resource"]) if row["resource"] is not None else None,
         )
         if tile.position in tiles:
             raise ValueError(f"duplicate tile position: {tile.position!r}")
@@ -251,12 +298,23 @@ def from_snapshot(data: object) -> GameState:
         unit = UnitState(
             id=row["id"], owner_id=row["owner_id"], position=_position(row["position"]),
             unit_type=UnitType(row["unit_type"]), moves_remaining=row["moves_remaining"], hp=row["hp"],
+            home_camp_id=row["home_camp_id"],
         )
         if unit.id in units:
             raise ValueError(f"duplicate unit ID: {unit.id!r}")
         units[unit.id] = unit
 
+    camps = {}
+    for row in _records(root["camps"], {"id", "position"}, "camps"):
+        camp = BarbarianCamp(row["id"], _position(row["position"]))
+        if camp.id in camps:
+            raise ValueError("duplicate camp ID")
+        camps[camp.id] = camp
     map_data = _record(root["game_map"], {"width", "height", "origin"}, "game_map")
+    result = root["result"]
+    if result is not None:
+        result = _record(result, {"winner_player_id", "victory_type"}, "result")
+        result = GameResult(result["winner_player_id"], VictoryType(result["victory_type"]))
     return GameState(
         config=game_config,
         turn=root["turn"],
@@ -268,4 +326,6 @@ def from_snapshot(data: object) -> GameState:
         units=units,
         game_map=GameMap(map_data["width"], map_data["height"], _position(map_data["origin"])),
         next_unit_id=root["next_unit_id"],
+        camps=camps,
+        result=result,
     )

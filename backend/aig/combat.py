@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from aig.state import GameState, UnitType, _identifier
+from aig.state import GameState, UnitType, _identifier, are_hostile
 
 
 def calculate_damage(attacking_strength: int, defending_strength: int) -> int:
@@ -30,7 +30,7 @@ def preview_attack(state: GameState, attacker_unit_id: str, target_unit_id: str)
         raise ValueError(f"unknown target unit: {target_unit_id!r}")
     attacker = state.units[attacker_unit_id]
     target = state.units[target_unit_id]
-    if attacker.owner_id == target.owner_id:
+    if not are_hostile(state.players[attacker.owner_id], state.players[target.owner_id]):
         raise ValueError("cannot attack a friendly unit or self")
     if attacker.unit_type.attack_range == 0:
         raise ValueError("unit cannot attack")
@@ -57,6 +57,8 @@ def preview_attack(state: GameState, attacker_unit_id: str, target_unit_id: str)
 
 def attack_unit(state: GameState, attacker_unit_id: str, target_unit_id: str) -> None:
     """Resolve through the shared preview, then commit damage, deaths and advance."""
+    if state.result is not None:
+        raise ValueError("game has ended")
     preview = preview_attack(state, attacker_unit_id, target_unit_id)
     attacker = state.units[attacker_unit_id]
     target = state.units[target_unit_id]
@@ -82,3 +84,5 @@ def attack_unit(state: GameState, attacker_unit_id: str, target_unit_id: str) ->
         attacker.hp = attacker_hp
         attacker.moves_remaining = remaining_moves
         attacker.position = attacker_position
+    from aig.knowledge import update_knowledge
+    update_knowledge(state)

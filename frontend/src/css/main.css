@@ -31,6 +31,8 @@ h3 { font-size: 16px; font-weight: normal; }
 .primary { background: linear-gradient(#d5b779, #a98543); color: #1e211a; border-color: #f0d699; font-weight: 700; padding: 12px 24px; box-shadow: inset 0 0 0 2px #b39151; }
 .faction-a { --faction: #efb954; }
 .faction-b { --faction: #6bc0f0; }
+.faction-c { --faction: #70d49b; }
+.faction-d { --faction: #cb9cf2; }
 .faction-neutral { --faction: #a2a99b; }
 .hud { display: flex; align-items: center; gap: 32px; padding: 13px 18px; border: 1px solid var(--edge); border-left: 5px solid var(--faction); background: linear-gradient(90deg, #263630, #1b2625); margin-bottom: 18px; }
 .hud small { display: block; text-transform: uppercase; letter-spacing: .1em; color: #bdc1ae; font: 10px system-ui, sans-serif; margin-bottom: 4px; }
@@ -58,6 +60,8 @@ h3 { font-size: 16px; font-weight: normal; }
 .sprite-archer { background-position: 33.333333% 100%; }
 .sprite-spearman { background-position: 66.666667% 100%; }
 .sprite-city { background-position: 100% 100%; }
+.resource-icon { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; z-index: 4; pointer-events: none; border-radius: 4px; background: #fff2cfdd; }
+.resource-icon svg { display: block; width: 100%; height: 100%; }
 .tile { width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; box-shadow: inset 0 0 0 1px #10231430; position: absolute; inset: 0; }
 .tile:disabled { opacity: 1; }
 .owned::after { content: ''; position: absolute; inset: 1px; border: 2px solid var(--faction); pointer-events: none; z-index: 2; }
@@ -78,7 +82,7 @@ h3 { font-size: 16px; font-weight: normal; }
 .with-city .piece.compact .sprite { height: 25px; }
 .stack-count { position: absolute; z-index: 6; top: 0; left: 0; padding: 0 2px; font-size: 10px; background: #10211a; }
 .world-footer { flex-wrap: wrap; gap: 6px 12px; padding-top: 10px; font-size: 10px; }
-.world-footer > .faction-a, .world-footer > .faction-b { color: var(--faction); }
+.world-footer > [class^="faction-"] { color: var(--faction); }
 aside { display: flex; flex-direction: column; gap: 12px; }
 .panel { background: linear-gradient(130deg, #27342c, #1d2825); border: 1px solid var(--edge); padding: 14px; box-shadow: inset 0 0 0 3px #12201c; }
 .panel h2 { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; overflow-wrap: anywhere; }
@@ -112,3 +116,15 @@ aside { display: flex; flex-direction: column; gap: 12px; }
 @media (min-width: 1450px) { :root { --tile-size: 64px; } }
 @media (max-width: 1080px) { body { padding: 15px; } .game-layout { grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; } :root { --tile-size: 48px; } .hud { gap: 18px; } }
 @media (max-width: 900px) { .game-layout { grid-template-columns: 1fr; } aside { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); align-items: start; } .hud { flex-wrap: wrap; } .masthead { flex-wrap: wrap; gap: 6px; } .edition { font-size: 10px; } }
+
+/* Environment V2: presentation follows server visibility flags. */
+.map-cell.unexplored .tile { background-image: none; background-color: #131923; }
+.map-cell.fogged .tile { filter: brightness(0.42) saturate(0.45); }
+.map-cell.fogged .city { opacity: 0.65; }
+
+/* Original camp icon and hostile Warrior tint; existing unit atlas is reused. */
+.camp-icon { position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; pointer-events: none; z-index: 2; }
+.camp-icon svg { width: 100%; height: 100%; }
+.fogged .camp-icon { opacity: .55; }
+.faction-barbarian { --faction-color: #bd4943; }
+.piece.faction-barbarian { border-color: #bd4943; background: #512927; }

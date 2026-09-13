@@ -45,7 +45,7 @@ class BenchmarkTests(unittest.TestCase):
 
     def trial(self, provider=None, name="heuristic", turns=2, folder="trial"):
         return run_trial(provider or HeuristicStrategyProvider(), provider_name=name, turns=turns,
-                         settings=self.settings, directory=self.root / folder)
+                         settings=self.settings, scenario_version="v3", directory=self.root / folder, allow_provider_fallback=True)
 
     def test_canonical_hash_and_trace_bytes(self):
         self.assertEqual(canonical_hash({"b": 2, "a": [1, "é"]}), canonical_hash({"a": [1, "é"], "b": 2}))
@@ -59,14 +59,14 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(data).hexdigest(), trace.hash.hexdigest())
 
     def test_fresh_independent_equal_states(self):
-        a, b = initial_state(), initial_state()
+        a, b = initial_state("v3"), initial_state("v3")
         self.assertEqual(to_snapshot(a), to_snapshot(b))
         a.players["A"].gold = 42
         self.assertEqual(b.players["A"].gold, 0)
 
     def test_paired_repeatability_output_and_offline_defaults(self):
         with patch("urllib.request.urlopen", side_effect=AssertionError("network forbidden")):
-            report = benchmark(output=self.root / "report", games=2, turns=2, settings=self.settings)
+            report = benchmark(scenario_version="v3", output=self.root / "report", games=2, turns=2, settings=self.settings)
         self.assertEqual(report["benchmarkVersion"], BENCHMARK_VERSION)
         self.assertEqual(json.loads((self.root / "report/summary.json").read_text()), report)
         self.assertEqual(len(report["runs"]), 4)
@@ -90,7 +90,7 @@ class BenchmarkTests(unittest.TestCase):
         activations = [json.loads(line) for line in (self.root / "trial/activations.jsonl").read_text().splitlines()]
         legacy_trace = hashlib.sha256()
         for activation in activations:
-            result = dict(player_id=activation["player_id"], plan=activation["plan"],
+            result = dict(player_id=activation["player_id"], **({"system_phase": True} if activation.get("system_phase") else {"plan": activation["plan"]}),
                           commands_executed=[c["command"] for c in commands if c["activation"] == activation["activation"]])
             legacy_trace.update(json.dumps(result, sort_keys=True).encode())
         self.assertEqual(legacy_trace.hexdigest(), existing["trace_sha256"])
@@ -148,7 +148,7 @@ class BenchmarkTests(unittest.TestCase):
         self.assertIn('"raw_content"', raw)
 
     def test_fake_ollama_repeated_differences_are_reported(self):
-        responses = iter((Posture.EXPAND, Posture.DEFEND))
+        responses = iter((Posture.EXPAND, Posture.EXPAND, Posture.DEFEND))  # Preflight, then two trials.
 
         def factory(name, settings):
             if name == "heuristic":
@@ -157,7 +157,7 @@ class BenchmarkTests(unittest.TestCase):
             return OllamaStrategyProvider(settings.ollama, requester=Mock(
                 return_value=envelope(canonical_json(plan.to_dict()))))
 
-        report = benchmark(output=self.root / "different", games=2, turns=1,
+        report = benchmark(scenario_version="v3", output=self.root / "different", games=2, turns=1,
                            provider_b="ollama", settings=self.settings, provider_factory=factory)
         self.assertFalse(report["repeatability"]["b"]["hashesIdentical"]["plans"])
         self.assertTrue(report["repeatability"]["b"]["allPureProviderRuns"])
@@ -169,8 +169,8 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(trial["fallbackCount"], 2)
         self.assertEqual(trial["metrics"]["plans_reused"], 6)
         rows = [json.loads(line) for line in (self.root / "trial/activations.jsonl").read_text().splitlines()]
-        self.assertTrue(all(row["fallback_used"] for row in rows))
-        self.assertTrue(all(row["actual_provider"] == "heuristic" for row in rows))
+        self.assertTrue(all(row["fallback_used"] for row in rows if not row.get("system_phase")))
+        self.assertTrue(all(row["actual_provider"] == "heuristic" for row in rows if not row.get("system_phase")))
 
     def test_every_replan_is_saved_beyond_runtime_ring_buffer(self):
         self.settings = replace(self.settings, ai=AiSettings(replan_interval=1))
@@ -181,11 +181,11 @@ class BenchmarkTests(unittest.TestCase):
     def test_output_and_cli_validation(self):
         for arguments in ({"games": 0}, {"turns": 0}, {"scenario": "fake"}, {"provider_a": "fake"}):
             with self.subTest(arguments=arguments), self.assertRaises(ValueError):
-                benchmark(output=self.root / "bad", settings=self.settings, **arguments)
+                benchmark(scenario_version="v3", output=self.root / "bad", settings=self.settings, **arguments)
         occupied = self.root / "keep.txt"
         occupied.write_text("keep")
         with self.assertRaisesRegex(ValueError, "new or empty"):
-            benchmark(output=self.root, settings=self.settings)
+            benchmark(scenario_version="v3", output=self.root, settings=self.settings)
         self.assertEqual(occupied.read_text(), "keep")
         with patch("builtins.print") as printer, patch("aig.ai.benchmark.load_settings", return_value=self.settings):
             main(["--turns", "1", "--output", str(self.root / "cli")])
@@ -194,7 +194,7 @@ class BenchmarkTests(unittest.TestCase):
 
 class ObservationTests(unittest.TestCase):
     def setUp(self):
-        self.state = initial_state()
+        self.state = initial_state("v3")
         self.writer = Mock()
         self.controller = AiController(HeuristicStrategyProvider())
         self.controller.previous_plan = StrategicPlan(Posture.EXPAND)
@@ -210,8 +210,11 @@ class ObservationTests(unittest.TestCase):
         totals, players = self.metrics.finish(self.state)
         self.assertEqual(totals["unit_losses"], 0)
         self.assertEqual(totals["cities_founded"], 1)
-        self.assertEqual(totals["cities_founded_at"], [dict(turn=0, activation=0, player_activation=0,
-                                                          player_id="A", city_id="capital")])
+        event = totals["cities_founded_at"][0]
+        self.assertEqual({k: event[k] for k in ('turn', 'activation', 'player_activation', 'player_id', 'city_id')},
+                         dict(turn=0, activation=0, player_activation=0, player_id="A", city_id="capital"))
+        self.assertEqual(event['center_resource'], 'wheat')
+        self.assertEqual(len(event['known_resources_in_radius']), 2)
         self.assertEqual(players["B"]["unused_settlers"], 1)
 
     def test_pre_economy_target_and_idle_measurement(self):
@@ -268,7 +271,8 @@ class ObservationTests(unittest.TestCase):
         old = StrategicPlan(Posture.EXPAND).to_dict()
         new = StrategicPlan(Posture.ATTACK, "B", "target").to_dict()
         controller = SimpleNamespace(last_trace=dict(previous_plan=old, resulting_plan=new,
-                                    replan_reason="invalid_target", fallback_used=False),
+                                    replan_reason="invalid_target", fallback_used=False, turn=0,
+                                    strategic_state=dict(known_resources=[], visible_enemy_military_strength=0, nearest_visible_enemy_unit_distance=None)),
                                      summary={"planAgeTurns": 0}, previous_plan=StrategicPlan(Posture.ATTACK))
         self.metrics.record_plan("A", controller)
         self.assertEqual(self.metrics.players["A"]["plan_changes"], 1)
@@ -310,7 +314,7 @@ class InferenceAccountingTests(unittest.TestCase):
             with self.subTest(category=category, response=response):
                 requester = Mock(side_effect=response) if isinstance(response, Exception) else Mock(return_value=response)
                 controller = AiController(OllamaStrategyProvider(Settings().ollama, requester=requester))
-                controller.plan_for(initial_state(), "A")
+                controller.plan_for(initial_state("v3"), "A")
                 result = inference_metrics([controller.last_trace], 4096)
                 self.assertEqual(result["failures"][category], count)
                 self.assertEqual(result["requests"], count)
@@ -320,7 +324,7 @@ class InferenceAccountingTests(unittest.TestCase):
     def test_actual_repair_success(self):
         requester = Mock(side_effect=[envelope("{}"), envelope()])
         controller = AiController(OllamaStrategyProvider(Settings().ollama, requester=requester))
-        controller.plan_for(initial_state(), "A")
+        controller.plan_for(initial_state("v3"), "A")
         result = inference_metrics([controller.last_trace], 4096)
         self.assertEqual(result["repair_success_count"], 1)
         self.assertEqual(result["fallback_count"], 0)
@@ -330,7 +334,7 @@ class InferenceAccountingTests(unittest.TestCase):
         requester = Mock(side_effect=[canonical_json(dict(prompt_eval_count=100, total_duration=1_000_000_000)),
                                       envelope()])
         controller = AiController(OllamaStrategyProvider(Settings().ollama, requester=requester))
-        controller.plan_for(initial_state(), "A")
+        controller.plan_for(initial_state("v3"), "A")
         result = inference_metrics([controller.last_trace], 4096)
         self.assertEqual(result["maximum_prompt_tokens"], 100)
         self.assertEqual(result["timings"]["ollama_total_seconds"]["mean"], 1)

@@ -21,7 +21,7 @@ def main() -> int:
     if args.turns is not None and args.turns < 1:
         parser.error("--turns must be positive")
     settings = load_settings()
-    provider = OllamaStrategyProvider(settings.ollama)
+    provider = OllamaStrategyProvider(settings.ollama, prompt_version=settings.ai.strategy_prompt_version)
     setup = human_vs_ai_demo_setup()
     if args.turns is not None:
         setup = replace(setup, players=tuple(replace(p, controller=ControllerType.AI) for p in setup.players))

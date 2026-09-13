@@ -126,6 +126,8 @@ class CommandTests(unittest.TestCase):
 
     def test_zero_survivor_and_empty_states_reject_commands(self):
         state = example_state()
+        state.turn = 0
+        state.active_player_id = None
         state.eliminate_player("player-a")
         state.eliminate_player("player-b")
         for command in (EndActivation("player-b"), EliminatePlayer("player-b", "player-a")):
@@ -189,7 +191,7 @@ class CommandTests(unittest.TestCase):
             with self.subTest(command=command):
                 apply_command(state, command)
                 snapshot = to_snapshot(state)
-                self.assertEqual(snapshot["schema_version"], 8)
+                self.assertEqual(snapshot["schema_version"], 12)
                 restored = from_snapshot(json.loads(json.dumps(snapshot, allow_nan=False)))
                 self.assertEqual(restored, state)
                 if state.active_player_id is not None:

@@ -1,5 +1,207 @@
 # Comparative strategy benchmarks
 
+The next controlled experiment freezes V5 and compares explicit prompt v1/v2
+selections with the same Luna configuration. See [prompt-v2](prompt-v2.md) for
+the contract, reproduction commands, historical context, and measurement results.
+
+## Environment V5 conquest measurements
+
+The current primary comparison target is Heuristic vs Luna; Qwen V5 is optional.
+Use `--environment-version v5 --scenario-version v3`. V3 world data already permits
+conquest; the separate four-civilization scenario is documented in [Scenario V4](scenario-v4.md). Prompt/schema/model profiles stay
+v1; benchmark-v1 gains additive capture/elimination/victory fields.
+
+`metrics` includes `winnerPlayerId`, `victoryType`, `victoryTurn`,
+`victoryActivation`, `gameDurationTurns`, and `turnCapReached`. Terminal victory
+stops commands and all remaining phases immediately. A capped game has no winner.
+Command outcomes include `conquest_events`; totals retain `city_capture_events`
+and `civilization_eliminations`. Per-faction fields record captures/losses, first
+capture, unit types, population loss, actual food/production resets, canceled
+production, recaptures, and elimination attribution with unit/Settler cleanup.
+See [metric definitions](environment-v5.md#benchmark-observations) and
+[offline verification](environment-v5-verification.md).
+
+Four-run offline verification (two paired trials):
+
+```powershell
+.\.venv\Scripts\python.exe -m aig.ai.benchmark --provider-a heuristic --provider-b heuristic --games 2 --turns 100 --environment-version v5 --scenario-version v3 --output .local/v5-new-run
+```
+
+Live model comparison requires separate authorization. Existing strict provider
+preflight and purity safeguards remain in force; no live V5 measurements were
+made during implementation. Historical environments must run at their recorded
+source revision. This runtime explicitly rejects them as execution targets.
+
+
+Current defaults are **environment-v5 / scenario-v4**, with snapshot v12 and
+unchanged prompt, plan-schema, model-profile and benchmark-v1 versions. See
+[Environment V4](environment-v4.md) for camp rules, local threats, spawn/clear
+measurements, lifecycle and fog boundaries. V1/V2/V3 results remain historical;
+the current engine cannot emulate their prior rule versions.
+
+Offline V4 verification (no model requests):
+
+```powershell
+.venv\Scripts\python.exe -m aig.ai.benchmark --provider-a heuristic --provider-b heuristic --games 2 --turns 100 --environment-version v4 --scenario-version v3 --output .local\environment-v4-comparison
+```
+
+V4 adds per-faction camp discovery/sighting/clear timestamps and counts, Scout
+attribution, barbarian combat damage/kills/losses, Settler movement/deaths, camp
+Gold, and observer spawn/skip/cap measurements. Existing production, expansion,
+economy and resource-yield metrics remain. DEFEND activations record visible
+civilization threats, visible barbarian threats, or neither; simultaneous kinds
+can count in both visible categories. System phases have `system_phase=true`, no
+plan/provider fields, and ordinary replayable commands. Civilization activation
+counts exclude the system phase. Command outcomes include `barbarian_events`.
+
+Each replan reports canonical StrategicState UTF-8 bytes and marginal barbarian
+field bytes. These are not token estimates. Qwen stays at its frozen 4096 context;
+Luna is the hosted target. Context overflow in later authorized Qwen trials is
+experimental data, not grounds to silently change its profile.
+
+## Experiment artifacts and provenance
+
+Artifact domains evolve independently; snapshot schema **v11** is separate from all
+of them. The current environment is V4 and scenario is V3; prompt/schema/profiles
+retain their V1 artifacts. The original baseline mappings below remain historical:
+
+| Identifier | Frozen content / meaning |
+| --- | --- |
+| `environment-v1` | Original deterministic full-information rules/information environment; metadata, not an engine compatibility switch |
+| `environment-v2` | Historical fog, exploration and knowledge-safe planning rules |
+| `environment-v3` | Historical discoverable resource economy |
+| `environment-v4` | Local barbarian camps, Warriors, replacements and camp Gold |
+| `scenario-v3` | Scenario V2 terrain/resources/starts plus three fixed camps and Warriors |
+| `scenario-v4` | Fixed 16x12 four-civilization total-war map, 18 resources and five camps |
+| `scenario-v1` | Original 12 by 10 map, seed 42, starts A `(2,2)` and B `(9,7)`, faction order and setup; benchmark controls both factions with AI |
+| `strategy-prompt-v1` | Exact original strategic instructions shared by Ollama and OpenAI |
+| `strategic-plan-schema-v1` | Original six-field logical plan contract and enum values |
+| `qwen-config-v1` | Qwen model/inference settings below |
+| `luna-config-v1` | Luna model/inference settings below |
+| `benchmark-v1` | Existing paired benchmark format, with additive per-run experiment metadata |
+
+`aig.versions.resolve_version()` uses explicit registries and centralized latest
+pointers. `None`, empty string and `latest` resolve to the current concrete latest
+ID. `v1` and domain-qualified IDs select history explicitly. Unknown or wrong-domain
+IDs fail before a benchmark starts. Reports record concrete IDs, never `latest`.
+
+The CLI adds `--environment-version`, `--scenario-version`, `--prompt-version`,
+`--plan-schema-version`, `--qwen-config-version`, and `--luna-config-version`.
+The existing `--scenario human-vs-ai` name remains accepted. For example, offline:
+
+```sh
+python -m aig.ai.benchmark \
+  --environment-version v2 --scenario-version v1 --prompt-version v1 \
+  --plan-schema-version v1 --provider-a heuristic --provider-b heuristic \
+  --turns 100 --output benchmark-results/versioned-heuristic
+```
+
+`AIG_STRATEGY_PROMPT_VERSION` selects instructions in normal application play and
+smoke commands too. Non-empty process values override `.env`; an empty process
+value falls through to `.env`, and an empty/absent local value means latest.
+Invalid versions fail at provider construction (or benchmark resolution), outside
+inference repair/fallback. An explicit CLI prompt selection overrides the setting;
+CLI `latest` or an empty CLI string explicitly chooses latest. No gameplay scenario
+environment variable is needed: browser/demo aliases follow latest, while the
+benchmark and `scenario_setup(version)` allow explicit selection.
+
+The V1 prompt's first line remains literally `Prompt version: strategy-v1` to
+preserve request bytes. Its canonical trace/manifest ID is `strategy-prompt-v1`.
+`ollama.SYSTEM_PROMPT` and `PROMPT_VERSION` remain compatibility exports, with
+`PROMPT_VERSION` now canonical. OpenAI's existing `strategic-plan-openai-v1` wire
+adapter still removes provider-incompatible constraints; both providers report
+the same logical `strategic-plan-schema-v1`. Schema calls return detached copies.
+
+### Frozen profiles and runtime overrides
+
+| Setting | `qwen-config-v1` | `luna-config-v1` |
+| --- | --- | --- |
+| Provider | `ollama` | `openai` |
+| Model | `hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF:Q4_K_M` | `gpt-5.6-luna` |
+| Context size | 4096 | provider default |
+| Temperature | 0.0 | not sent |
+| Seed | 42 | not sent |
+| Maximum output tokens | 256 | 512 |
+| Think / stream | false / false | not sent |
+| Reasoning effort | not sent | `none` |
+| Store / SDK retries | not applicable | false / 0 |
+
+Ordinary runtime settings remain usable. Omitted profile flags resolve the latest
+profile for comparison with effective inference settings: matching settings record
+its concrete ID; any difference records `modelConfigVersion: null` and the exact
+effective `modelConfiguration`. Terminal output calls this a custom configuration.
+This does not silently relabel modified settings as a preserved baseline.
+
+An **explicit** `--qwen-config-version v1` or `--luna-config-version v1` supplies
+the frozen inference values, overriding ordinary model tuning settings. Explicit
+empty/latest profile flags pin the current latest profile in the same way.
+Connection settings and secrets remain runtime inputs. Timeout and Ollama
+`keep_alive` affect operations and timing, not profile identity; effective values
+remain in report `configuration`. Ollama's endpoint is runtime metadata, with URL
+credentials, query and fragment removed from diagnostics. Neither profile stores
+an endpoint, API key, authorization header or client object. The heuristic needs
+no model profile; its implementation is identified by source revision.
+
+### Manifest and source provenance
+
+Each `summary.json` run has an `experiment` object, associating all files under
+its existing `directory` with one manifest. `run_trial()` also returns a manifest.
+The shared configuration and existing trace paths remain backward-compatible;
+there is no per-line manifest duplication. Example for the Luna profile:
+
+```json
+{
+  "environmentVersion": "environment-v1",
+  "scenarioVersion": "scenario-v1",
+  "strategyPromptVersion": "strategy-prompt-v1",
+  "strategicPlanSchemaVersion": "strategic-plan-schema-v1",
+  "benchmarkVersion": "benchmark-v1",
+  "provider": "openai",
+  "modelConfigVersion": "luna-config-v1",
+  "model": "gpt-5.6-luna",
+  "modelConfiguration": {
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "none",
+    "max_output_tokens": 512,
+    "store": false,
+    "max_retries": 0
+  },
+  "sourceRevision": null,
+  "sourceDirty": null
+}
+```
+
+When local Git is available, these last two fields hold the actual full commit
+SHA and a boolean dirty status, including untracked, non-ignored files. Git is
+queried once per paired benchmark from the source checkout, without shell command
+interpolation or a GitHub API call. Missing Git, absent checkout metadata or a
+failed query produces null values and does not prevent library/benchmark use.
+An installed package nested in an unrelated repository does not claim its revision.
+
+`canonical_json(manifest)` provides sorted, compact deterministic non-secret JSON.
+No new identity hash is needed: source timestamps, temporary paths and secrets
+are excluded. Existing initial/final-state, command, strategic-state and plan
+hashes do not include the new manifest, and remain unchanged. Inference traces
+record resolved prompt and logical schema IDs, so their diagnostic bytes change.
+
+Versioned experiment artifacts remain selectable where practical. Historical
+game-engine behavior is reproduced through the recorded source revision rather
+than by accumulating compatibility branches throughout game logic. Environment
+metadata identifies the experimental environment; source revision identifies its
+exact implementation. Selecting `environment-v1` labels the run and does not load
+old rules. A dirty SHA alone cannot recreate uncommitted changes: preserve those
+changes separately when exact reproduction is needed. Model aliases, server
+versions and remote inference may also change independently of local source.
+
+To introduce V2, leave V1 payloads untouched, add real V2 content to the relevant
+registry, test explicit V1 still resolves, then move only that domain's latest
+pointer. An `environment-v2` experiment may still use `scenario-v1`, prompt V1,
+schema V1 and either model profile V1. There are no fake V2 entries or historical
+game-rule branches. Existing baseline files remain untouched; see the committed
+[baseline mapping](baselines.md).
+
+## Harness behavior
+
 The `benchmark-v1` harness measures what changes when `StrategyProvider` changes.
 Each pair runs the fixed `human-vs-ai` demo twice, freshly created and started,
 with **both factions controlled by the selected provider** in each run. A is
@@ -38,14 +240,85 @@ directory; existing reports are never overwritten. The default output is
 `benchmark-results`, ignored by Git. The CLI prints outcome deltas, provider
 purity, request counts, mean inference time, peak prompt tokens and repeatability.
 
-Selecting `ollama` explicitly enables network requests. There is no auto-discovery
-or model call in normal tests. The existing provider still repairs an invalid
-response once and falls back through the controller on an expected failure.
-Fallback runs finish, but `pureProviderRun: false`, `fallbackCount`, comparison
-purity and terminal `MIXED` markers prevent treating them as successful pure LLM
-trials. A reused fallback plan counts as reuse, not another fallback invocation.
-Unexpected engine/action-limit errors abort the CLI; partial trace files are not
-a completed report and no `summary.json` is written.
+Selecting `ollama` or `openai` explicitly enables network requests. Automated tests
+use fake providers/transports. Controlled benchmarks default to **strict provider
+purity**. Normal interactive gameplay, including Human vs Ollama/OpenAI, retains
+controller fallback: provider failure -> heuristic plan -> gameplay continues.
+
+Controlled benchmarks resolve artifacts/configuration, preflight all distinct live
+providers, and require valid requested-provider plans with no fallback before any
+trial starts. Preflight uses the normal `StrategyProvider.create_plan` path and a
+`StrategicStateBuilder` view of the active faction in the normal started scenario.
+It applies the resolved prompt, schema, model profile and environment, then checks
+the returned `StrategicPlan` with `parse_plan`, including strategic references and
+provider provenance. Heuristic needs no network preflight.
+
+Preflight disables repair for **one HTTP/API attempt per distinct live provider**.
+Missing credentials can fail construction with zero requests. Every requested live
+provider is checked even when an earlier one fails; neither side starts unless all
+pass. Trial providers and controllers are fresh instances. Trials retain the normal
+one-repair policy and provider request payload semantics.
+
+After preflight, a strict trial failure invalidates the trial, preserves partial
+traces, stops **before executing fallback commands**, and aborts all remaining
+trials. Command replay verifies the completed prefix before reporting; replay
+success cannot make an invalid model trial valid. Invalid pairs have no deltas.
+Unexpected engine/action-limit errors still abort without a completed report.
+
+`--allow-provider-fallback` permits continued fallback after successful preflight.
+Such runs remain `fallback_contaminated`, `validModelTrial: false` and
+`pureProviderRun: false`, and the CLI returns nonzero. It never bypasses preflight.
+A reused fallback plan counts as reuse, not another fallback invocation.
+
+### Preflight-only command and report fields
+
+This is an explicit network action; run only when live preflight is authorized:
+
+```powershell
+.venv\Scripts\python.exe -m aig.ai.benchmark --provider-a ollama --provider-b openai --environment-version v2 --scenario-version v1 --prompt-version v1 --plan-schema-version v1 --qwen-config-version v1 --luna-config-version v1 --preflight-only --output .local\provider-preflight-v2
+```
+
+Each provider prints PASS/FAIL, model, latency, request count, available usage and
+sanitized diagnostics. Trials started is zero. Exit status is 0 if all preflights
+pass (including heuristic-only), 1 for preflight/trial failure or contamination,
+and 2 for invalid CLI configuration. Use a new/empty output path for each attempt.
+
+The additive report fields retain `benchmark-v1`; no frozen artifact registry,
+snapshot, prompt, schema, scenario or model profile is revised. Historical reports
+without these fields must never be assumed to have passed preflight.
+
+- `status`: `preflight_failed`, `preflight_passed`, `completed`, `trial_failed`, or
+  `fallback_contaminated`; `strictProviderMode` records the execution policy.
+- `experiments`: resolved manifests keyed by requested provider, including source
+  revision and concrete artifact IDs even if preflight fails.
+- `preflight`: serializable results with `requested_provider`, `actual_provider`,
+  `success`, `model`, `duration_seconds`, `error_category`, `sanitized_error`,
+  `retry_count`, `fallback_used`, `plan_valid`, `requests`, and `usage` per attempt.
+  Only available numeric usage fields are retained: Ollama prompt/generation token
+  and duration counters; OpenAI input/cached/output/reasoning/total token counters.
+- `trialsStarted`, `validModelTrials`, `invalidModelTrials`, `pureProviderRuns`:
+  individual simulations, including heuristic controls, not pairs or preflights.
+- `runs[].validModelTrial`, `status`, `aborted`, `replay`: distinguish valid results
+  from an invalid trial's saved final snapshot of its stopped prefix.
+- `requestAccounting`: `preflightRequests`, `trialProviderRequests`, `repairRequests`
+  (separate `preflight`/`trials` maps), and `fallbackPlans`, keyed by provider.
+  Trial requests include repair attempts; repairs are a subset, not extra requests
+  to add again. Preflights never enter trial inference counts. Request counters
+  represent attempted transport calls, not confirmed remote receipt.
+
+Failed preflight writes only diagnostic `summary.json`, with zero trials/valid/
+invalid runs, empty runs/comparison/repeatability, and all preflight manifests.
+It creates no trial directories, final states or fake provider comparisons.
+
+Diagnostics preserve connection, timeout, DNS when exposed, HTTP/API,
+authentication, permission/model access, rate-limit, malformed envelope/JSON,
+schema/reference, refusal/incomplete/empty output, repair and fallback categories.
+Ollama retains coarse `transport_failure`/`non_2xx` where no finer cause is exposed.
+Benchmark checks also report `provider_mismatch`, `provider_exception`, and
+`configuration_failure`. Raw exception representations, authorization headers and
+secret settings are excluded. Free-form errors are replaced by safe diagnostics;
+OpenAI credential echoes are redacted. See [baseline status](baselines.md) for the
+preserved failed V2 infrastructure experiment with zero valid LLM trials.
 
 `openai` is also an explicit provider choice, independent of
 `AIG_STRATEGY_PROVIDER`. Configure `OPENAI_API_KEY` on the backend first. Its
@@ -56,7 +329,7 @@ default cloud model is `gpt-5.6-luna`; no pricing is embedded in provider logic.
 .venv\Scripts\python.exe -m aig.ai.benchmark --provider-a heuristic --provider-b openai --games 2 --turns 100 --output benchmark-results\luna
 ```
 
-OpenAI follows the same pure/MIXED fallback reporting. Inference records include
+OpenAI follows the same preflight and strict purity enforcement. Inference records include
 configured and returned model IDs, response/request IDs, and available input,
 cached input, output, reasoning, and total token counts for each attempt.
 `inference.openai_usage` in the summary adds per-counter statistics and totals,
@@ -160,6 +433,14 @@ baseline hashes remain tested separately.
   `plan_age_turns` (null initially), full input `strategic_state`, its SHA-256,
   and `fallback_used`. Plan hashes include provider provenance. Per-output-plan
   hashes are used internally for equivalent-state comparisons.
+  `previous_plan` is the actual provider input: null after `invalid_target`,
+  otherwise a still-valid plan (including valid expired/event-triggered plans).
+  Invalidations add `invalidated_previous_plan` separately for diagnostics and
+  historical change/elimination metrics; it is never model input. The offline
+  knowledge audit now validates previous-plan references as well as new/reused
+  plans and reconstructed StrategicState. Historical traces may fail this stricter
+  check; preserve them unchanged. Corrected plan-trace hashes differ without
+  requiring a benchmark/schema/prompt version change.
 * `commands.jsonl`: one row per successful command, with global `activation`,
   `player_activation`, `turn`, `player_id`, `command` (`type` plus dataclass
   arguments), and `outcome`. Outcomes contain attack damage/deaths, founding
@@ -251,3 +532,78 @@ The only runtime additions are optional command observations and diagnostic
 failure categories. Gameplay decisions, prompt/repair wording, validation rules,
 model options, plan reuse and fallback policy remain unchanged. Real LAN runs
 are separate opt-in commands and never a CI prerequisite.
+
+
+## Environment V2 exploration measurement
+
+New per-faction facts are `explored_tile_count`, `map_explored_percent`,
+`tiles_newly_revealed`, `tiles_newly_revealed_by_scouts`,
+`scout_movement_commands`, `discovered_enemy_city_count`, `first_contacts`
+(enemy city/unit, each with zero-based global turn and activation index),
+`visibility_at_replans` (visible enemy military strength and nearest visible
+combat-unit distance), and `significant_discovery_replans`. Initial sight counts
+as explored but is excluded from newly revealed command totals. Scout attribution
+counts new coordinates from Scout movement and Scout production sight; shared
+already explored tiles never count twice. First-contact observers sample initial
+state and every command for all factions, including the inactive faction.
+There is no synthetic exploration-quality score. Economy, expansion, combat,
+production, research, plan churn and inference metrics remain available.
+
+Every current engine run records `environment-v2` and concrete scenario, prompt,
+schema, model-profile (or explicit custom/not-applicable metadata), benchmark and
+source-revision fields. Historical `environment-v1` still resolves as provenance
+metadata, but the current benchmark rejects running under its label: use the
+recorded V1 source revision and frozen archives to reproduce V1. Runtime V1
+emulation is not implemented. Pair comparisons explicitly report both environment
+versions and `environmentChanged`; cross-environment deltas must not be interpreted
+as an isolated provider effect.
+
+The fixed scenario-v1 map and starting positions are unchanged. See
+[Environment V2 verification](environment-v2.md) for the offline 100-turn heuristic
+result, replay hashes and preservation checks. Qwen/Luna were not run for this slice.
+
+## Four-civilization Scenario V4 measurements
+
+Select `--scenario-version v4 --environment-version v5 --turns 150`. The scenario
+has A-D plus the system barbarian phase. Benchmark slots a/b designate two entire
+all-faction trials, not player A versus player B: each selected provider controls
+all four normal factions in its trial. Mixed providers within a single game are
+not currently exposed by this harness. Scenario data never selects a provider.
+
+Per-player metrics and world totals retain all prior fields. Additions include:
+
+- `captures_by_victim_civ`, `losses_by_capturing_civ`, `rivals_eliminated`.
+- `distinct_primary_enemies_selected`, `primary_enemy_switches`, `target_city_switches`.
+- `targeting_activations_by_rival` counts each activation using a target, including
+  reused plans and a partial terminal activation. It is not wall time or plan count.
+- `consecutive_plans_same_primary_enemy` and its mean count consecutive newly
+  created plans, excluding null targets; null breaks a streak. Switch counters
+  compare consecutive new plans and include changes to/from null. Initial selection
+  is not a switch. Reused plans do not increment these counters.
+- `eliminated_target_transitions` counts replans changing away from a primary
+  enemy whose elimination is public in that replan's supplied state.
+- `multi_front_visibility_at_replans` records visible rival IDs, strength grouped
+  by owner, and own cities with military units of two or more rivals within three
+  Chebyshev tiles. This geometric proximity is not a claim of attack legality.
+  Barbarians remain separately measured. No hidden tactical information is used.
+
+World conquest fields add `elimination_order`, `eliminations_by_killer_civ`,
+`surviving_city_count`, `rivals_eliminated_by_winner`, and
+`rivals_eliminated_by_other_civs`. Winner-related counts are null without victory.
+Capture events retain former/new owner, city ID, turn, activation and recapture
+history across arbitrary owners. Event coordinates can be recovered by city ID
+from snapshots; no arbitrary geographic front labels or strategic quality score
+are imposed. Abandonment is not inferred: switches are reported directly because
+capture, elimination and changing knowledge can all cause a target to change.
+
+Comparisons use the intersection of player IDs and flag `playerRosterChanged`,
+so comparison with a historical two-player report does not dereference missing
+players. Old reports remain unchanged. New fields are additive under benchmark-v1.
+
+The world maximum of simultaneously visible enemy civilizations is the maximum
+across players, not the sum of their maxima.
+
+The old V4 file-hash fixture predates addition of prompt v2 to `prompts.py`.
+Its test now checks the historical V1 payload hash rather than the entire
+extensible registry file. Both V1 and V2 payload hashes are independently pinned
+in `test_scenario_v4.py`; no historical fixture or prompt was rewritten.

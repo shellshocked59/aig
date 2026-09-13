@@ -18,7 +18,12 @@ from aig.ai.strategy import HeuristicStrategyProvider, Posture, StrategicPlan, S
 from aig.api import create_app
 from aig.application import GameSession
 from aig.commands import EndActivation, FoundCity, apply_command
-from aig.scenarios import human_vs_ai_demo_setup
+from aig.scenarios import scenario_setup
+
+# Provider reuse regression has a fixed two-civilization fixture.
+def human_vs_ai_demo_setup():
+    return scenario_setup('v2')
+
 from aig.settings import OllamaSettings, load_settings
 from aig.setup import create_game, start_game
 from aig.snapshots import SCHEMA_VERSION, to_snapshot
@@ -139,10 +144,10 @@ class OllamaProviderTests(unittest.TestCase):
                 self.assertEqual(self.provider.last_trace["retry_count"], 1)
 
     def test_own_city_and_mismatched_enemy_city_are_rejected(self):
-        own = dict(self.state["enemy_cities"][0], id="city-B", owner_id="B")
+        own = dict(id="city-B", owner_id="B", x=7, y=5)
         self.state["own_cities"].append(own)
         for target, enemy in [("city-B", "A"), ("city-A", "C")]:
-            self.state["enemy_units"].append(dict(self.state["enemy_units"][0], owner_id="C", id="other"))
+            self.state["enemy_units"].append(dict(owner_id="C", id="other", type="warrior", x=3, y=3, hp=100, strength=20))
             with self.subTest(target=target), self.assertRaises(ValueError):
                 parse_plan(canonical_json({**self.plan.to_dict(), "target_city_id": target,
                                            "primary_enemy_id": enemy}), self.state)
@@ -302,7 +307,7 @@ class OllamaControllerTests(unittest.TestCase):
         self.assertEqual(trace["player_id"], "B")
         self.assertEqual(trace["replan_reason"], "missing_plan")
         self.assertIsNone(trace["plan_age_turns"])
-        self.assertEqual(SCHEMA_VERSION, 8)
+        self.assertEqual(SCHEMA_VERSION, 12)
         self.assertNotIn("prompt", canonical_json(to_snapshot(self.state)))
         trace["attempts"].clear()
         self.assertEqual(len(self.ai.inference_traces[0]["attempts"]), 1)
@@ -352,8 +357,8 @@ class LlmApiTests(unittest.TestCase):
         self.assertEqual(summary["model"], OllamaSettings().model)
         self.assertEqual(summary["retryCount"], 0)
         self.assertIsInstance(summary["durationSeconds"], float)
-        self.assertTrue(summary["commands_executed"])
-        self.assertIn("plan", summary)
+        self.assertNotIn("commands_executed", summary)
+        self.assertNotIn("plan", summary)
         self.assertNotIn("CURRENT STATE", json.dumps(state))
         self.post("/commands", {"type": "end_activation"})
         self.assertEqual(self.requester.call_count, 1)

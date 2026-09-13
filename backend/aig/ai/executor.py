@@ -1,8 +1,9 @@
 """Basic tactical choices; every gameplay mutation goes through apply_command."""
 
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
+from aig.ai.knowledge_planning import planning_view, exploration_path
 from aig.ai.strategy import ExpansionPriority, Posture, StrategicPlan
 from aig.cities import can_found_city_at
 from aig.combat import preview_attack
@@ -10,7 +11,7 @@ from aig.commands import (
     AttackUnit, Command, EndActivation, FoundCity, MoveUnit,
     SetCityProduction, SetResearch, apply_command,
 )
-from aig.economy import terrain_yields
+from aig.economy import tile_yields
 from aig.movement import find_path
 from aig.research import available_technologies, unit_is_unlocked
 from aig.state import ControllerType, GameState, Position, UnitState, UnitType, _integer
@@ -48,20 +49,32 @@ class AiExecutor:
         state.validate()
         if state.active_controller is not ControllerType.AI:
             raise ValueError("AI execution requires an active AI player")
+        if state.is_barbarian(state.active_player_id):
+            raise ValueError("system faction requires BarbarianController")
         if not isinstance(plan, StrategicPlan):
             raise ValueError("AI execution requires a StrategicPlan")
         actor = state.active_player_id
+        truth = state
+        state = planning_view(truth, actor)
         executed: list[Command] = []
 
         def issue(command: Command) -> None:
+            nonlocal state
             if len(executed) >= self.max_actions:
-                raise AiActionLimitError(f"AI {actor} exceeded {self.max_actions} actions on turn {state.turn}")
+                raise AiActionLimitError(f"AI {actor} exceeded {self.max_actions} actions on turn {truth.turn}")
+            # ID allocation is infrastructure, not a spatial/tactical decision.
+            if isinstance(command, FoundCity):
+                base, suffix = command.city_id, 1
+                while command.city_id in truth.cities:
+                    command = replace(command, city_id=f"{base}-{suffix}")
+                    suffix += 1
             if self.observer is not None:
-                self.observer("before", state, command)
-            apply_command(state, command)
+                self.observer("before", truth, command)
+            apply_command(truth, command)
+            state = planning_view(truth, actor)
             executed.append(command)
             if self.observer is not None:
-                self.observer("after", state, command)
+                self.observer("after", truth, command)
 
         player = state.players[actor]
         available = available_technologies(player)
@@ -76,7 +89,12 @@ class AiExecutor:
         for unit_id in settlers:
             unit = state.units[unit_id]
             while unit.moves_remaining:
-                if can_found_city_at(state, actor, unit.position):
+                # Preserve the initial capital's immediate founding. Later settlers
+                # compare known economic sites before committing to a location.
+                initial_capital = not any(c.owner_id == actor for c in state.cities.values())
+                path = ([unit.position] if initial_capital and can_found_city_at(state, actor, unit.position)
+                        else self._settlement_path(state, unit))
+                if path == [unit.position]:
                     base = f"ai-city-{unit.id}"
                     city_id, suffix = base, 1
                     while city_id in state.cities:
@@ -85,17 +103,16 @@ class AiExecutor:
                     number = 1 + sum(c.owner_id == actor for c in state.cities.values())
                     issue(FoundCity(actor, unit.id, city_id, f"{actor} Settlement {number}"))
                     break
-                path = self._settlement_path(state, unit)
                 if path is None:
                     break
-                issue(MoveUnit(actor, unit.id, path[min(unit.moves_remaining, len(path) - 1)]))
+                issue(MoveUnit(actor, unit.id, path[1]))
 
         # New cities need a target before this activation's economy.
         self._production(state, actor, plan, issue)
         military = sorted(u.id for u in state.units.values()
                           if u.owner_id == actor and u.unit_type is not UnitType.SETTLER)
         for unit_id in military:
-            while unit_id in state.units and state.units[unit_id].moves_remaining:
+            while truth.result is None and unit_id in state.units and state.units[unit_id].moves_remaining:
                 unit = state.units[unit_id]
                 targets = []
                 for enemy in sorted(state.units.values(), key=lambda u: u.id):
@@ -112,9 +129,11 @@ class AiExecutor:
                 path = self._military_path(state, unit, plan)
                 if path is None or len(path) < 2:
                     break
-                issue(MoveUnit(actor, unit.id, path[min(unit.moves_remaining, len(path) - 1)]))
+                issue(MoveUnit(actor, unit.id, path[1]))
 
-        issue(EndActivation(actor))
+        if truth.result is None:
+            self._production(state, actor, plan, issue)
+            issue(EndActivation(actor))
         return AiActivationResult(actor, plan, tuple(executed))
 
     @staticmethod
@@ -131,6 +150,11 @@ class AiExecutor:
                     military_needed and city.production_target is UnitType.SETTLER):
                 continue
             choices = list(plan.production_priority)
+            # Conventional exploration support, using only our roster and known area.
+            if (not military_needed and len(state.explored) < state.game_map.width * state.game_map.height
+                    and not any(u.unit_type is UnitType.SCOUT for u in units)
+                    and not any(c.production_target is UnitType.SCOUT for c in cities)):
+                choices.insert(0, UnitType.SCOUT)
             if military_needed:
                 choices = [t for t in choices if t is not UnitType.SETTLER]
                 choices += [t for t in (UnitType.WARRIOR, UnitType.ARCHER, UnitType.SPEARMAN) if t not in choices]
@@ -147,21 +171,40 @@ class AiExecutor:
 
     @staticmethod
     def _settlement_path(state: GameState, unit: UnitState) -> list[Position] | None:
+        if isinstance(state, GameState):
+            state = planning_view(state, unit.owner_id)
         def priority(position: Position):
-            yields = [terrain_yields(t.terrain) for p, t in state.tiles.items()
-                      if _distance(p, position) <= 1]
-            return (_distance(unit.position, position), -sum(y.food for y in yields),
-                    -sum(y.production for y in yields), position.y, position.x)
+            yields = [tile_yields(t, city_center=p == position) for p, t in state.tiles.items()
+                      if _distance(p, position) <= 1 and t.terrain.value != "mountains"]
+            return (-sum(y.food for y in yields), -sum(y.production for y in yields),
+                    -sum(y.gold for y in yields), _distance(unit.position, position), position.y, position.x)
 
         candidates = [p for p in state.tiles if can_found_city_at(state, unit.owner_id, p)]
         for position in sorted(candidates, key=priority):
             path = find_path(state, unit, position)
-            if path is not None and len(path) > 1:
+            if path is not None:
                 return path
-        return None
+        return exploration_path(state, unit)
 
     @staticmethod
     def _military_path(state: GameState, unit: UnitState, plan: StrategicPlan) -> list[Position] | None:
+        if isinstance(state, GameState):
+            state = planning_view(state, unit.owner_id)
+        if plan.posture is Posture.ATTACK and unit.unit_type.can_capture:
+            target = state.cities.get(plan.target_city_id)
+            if (target is not None and target.owner_id != unit.owner_id
+                    and not state.players[target.owner_id].eliminated):
+                path = find_path(state, unit, target.position)
+                if path is not None:
+                    return path
+        # A local, known and enterable camp is a shared one-step opportunity.
+        for camp in sorted(state.camps.values(), key=lambda c: c.id):
+            if _distance(unit.position, camp.position) == 1 and state.can_enter(unit.owner_id, camp.position):
+                return [unit.position, camp.position]
+        if unit.unit_type is UnitType.SCOUT:
+            frontier = exploration_path(state, unit)
+            if frontier is not None:
+                return frontier
         own_cities = [c for c in state.cities.values() if c.owner_id == unit.owner_id]
         enemies = [u for u in state.units.values() if u.owner_id != unit.owner_id]
         goal = None
@@ -177,7 +220,8 @@ class AiExecutor:
                     return None
         if goal is None:
             target = state.cities.get(plan.target_city_id)
-            if target is not None and target.owner_id != unit.owner_id:
+            if (target is not None and target.owner_id != unit.owner_id
+                    and not state.players[target.owner_id].eliminated):
                 goal = target.position
             else:
                 enemy = min(enemies, key=lambda e: (

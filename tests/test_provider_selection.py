@@ -61,8 +61,8 @@ class ProviderSelectionTests(unittest.TestCase):
                     app = self.app(selected)
                     requester = Mock(side_effect=TimeoutError() if failure else
                                      [envelope('invalid json'), envelope()])
-                    def construct(settings):
-                        return OllamaStrategyProvider(settings, requester=requester)
+                    def construct(settings, **versions):
+                        return OllamaStrategyProvider(settings, requester=requester, **versions)
                     with patch('aig.application.OllamaStrategyProvider', side_effect=construct) as factory, \
                             TestClient(app) as client:
                         response = client.post('/api/game/demo/configured')
@@ -73,7 +73,7 @@ class ProviderSelectionTests(unittest.TestCase):
                         self.assertEqual(ai.replan_interval, 3)
                         self.assertEqual(ai.executor.max_actions, 100)
                         if selected == 'ollama':
-                            factory.assert_called_once_with(app.state.settings.ollama)
+                            factory.assert_called_once_with(app.state.settings.ollama, prompt_version="latest")
                             self.assertIsInstance(ai.provider, OllamaStrategyProvider)
                         else:
                             factory.assert_not_called()
@@ -90,7 +90,8 @@ class ProviderSelectionTests(unittest.TestCase):
                         self.assertEqual(first['fallbackUsed'], fallback)
                         self.assertEqual(first['actualProvider'], 'heuristic' if fallback else selected)
                         self.assertEqual(first['retryCount'], int(selected == 'ollama' and not failure))
-                        self.assertTrue(reused['planReused'])
+                        self.assertNotIn('planReused', reused)
+                        self.assertTrue(ai.latest_summaries[0]['planReused'])
                         self.assertEqual(reused['retryCount'], 0)
                         self.assertEqual(requester.call_count, (1 if failure else 2) if selected == 'ollama' else 0)
                         public = json.dumps(results)
@@ -151,20 +152,21 @@ class ProviderSelectionTests(unittest.TestCase):
         for selected in ('heuristic', 'ollama', 'openai'):
             settings = load_settings(local_file=None, environ={'AIG_STRATEGY_PROVIDER': selected})
             requester = Mock(return_value=envelope())
-            def construct(config):
-                return OllamaStrategyProvider(config, requester=requester)
+            def construct(config, **versions):
+                return OllamaStrategyProvider(config, requester=requester, **versions)
             with TemporaryDirectory() as directory, \
                     patch('aig.ai.benchmark.load_settings', return_value=settings), \
                     patch('aig.ai.benchmark.OllamaStrategyProvider', side_effect=construct) as factory, \
                     patch('builtins.print'):
-                benchmark_main(['--provider-a', 'heuristic', '--provider-b', 'ollama',
+                benchmark_main(['--scenario-version', 'v3', '--provider-a', 'heuristic', '--provider-b', 'ollama',
                                 '--games', '1', '--turns', '1', '--output', directory])
                 report = json.loads((Path(directory) / 'summary.json').read_text())
                 self.assertEqual(report['configuration']['providers'], {'a': 'heuristic', 'b': 'ollama'})
                 self.assertEqual([run['provider'] for run in report['runs']], ['heuristic', 'ollama'])
                 self.assertTrue(all(run['pureProviderRun'] for run in report['runs']))
-                factory.assert_called_once_with(settings.ollama)
-                self.assertEqual(requester.call_count, 2)
+                self.assertEqual(factory.call_count, 2)  # Preflight and fresh trial provider.
+                factory.assert_called_with(settings.ollama, prompt_version="strategy-prompt-v1", plan_schema_version=None)
+                self.assertEqual(requester.call_count, 3)  # One preflight, two trial requests.
 
 
 if __name__ == '__main__':

@@ -36,8 +36,9 @@ response = client.responses.create(
 )
 ```
 
-`SYSTEM_PROMPT` and `PROMPT_VERSION` are reused directly from the Ollama planner
-(`strategy-v1`). The canonical current state, previous plan (`null` when absent),
+Both providers resolve the shared frozen `strategy-prompt-v1` artifact from
+`ai/prompts.py`; its instruction text retains the original `strategy-v1` label.
+The canonical current state, previous plan (`null` when absent),
 and priority options have identical content; an offline comparison test pins
 that equivalence. Each request is self-contained. There is no conversation,
 `previous_response_id`, streaming, tools, temperature, seed, or hidden SDK retry.
@@ -63,9 +64,11 @@ an authorized live test.
 
 ## Validation and failure policy
 
-Only a completed response without an error is eligible. Message content is
-checked for refusal, then the SDK's `output_text` helper extracts text across
-output items. JSON goes through the existing parser and strategic-reference
+Only a completed response without an error is eligible. Messages must also be
+completed assistant messages with valid text content; refusals and malformed
+content are rejected even when another message contains valid plan text. The
+SDK's `output_text` helper extracts text across output items. JSON goes through
+the existing parser and strategic-reference
 validation before a `StrategicPlan` is returned.
 
 Malformed JSON, schema failures, and invalid references get one repair request.
@@ -74,6 +77,9 @@ existing Ollama repair wording. A second invalid plan raises
 `StrategyProviderError`. Refusal, incomplete/failed response, malformed envelope,
 empty output, and SDK/API errors fail immediately; they are not repairable plan
 validation failures. SDK `max_retries=0` prevents hidden transport retries.
+Unreadable HTTP JSON (including invalid encoding or excessive nesting) is also
+translated to a sanitized `malformed_openai_response` failure: the SDK can raise
+decoding errors before constructing a response or wrapping them in `APIError`.
 
 Failure categories distinguish authentication, permission, model not available
 (HTTP 404), rate limit, timeout, connection failure, other API errors, malformed
@@ -136,5 +142,7 @@ runs are marked `pureProviderRun: false` and displayed as `MIXED`.
 .venv\Scripts\python.exe -m aig.ai.benchmark --provider-a heuristic --provider-b openai --games 2 --turns 100 --output benchmark-results\luna
 ```
 
-Implementation validation is offline with fake SDK clients. Live smoke and
+Implementation validation is offline with fake SDK clients and the real SDK
+using an in-memory HTTP transport for request serialization, response decoding,
+HTTP failures, retry counts, and controller fallback. Live smoke and
 baseline measurements remain separate, explicitly authorized actions.

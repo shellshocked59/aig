@@ -42,6 +42,17 @@ class CorsApiTests(unittest.TestCase):
 
 
 class GameApiTests(unittest.TestCase):
+    def test_normal_api_cannot_select_observer_truth(self):
+        self.post('/demo/ai')
+        self.post('/start')
+        self.command('end_activation')
+        result = self.client.get('/api/game?observer=true').json()
+        self.assertTrue(all(u['ownerId'] == 'A' for u in result['units']))
+        self.assertFalse(result['cities'])
+        self.assertTrue(any(t['terrain'] is None for t in result['map']['tiles']))
+        for trace in result['aiActivations']:
+            self.assertTrue({'plan', 'commands_executed', 'replanReason'}.isdisjoint(trace))
+
     def setUp(self):
         # API tests must never load developer credentials from the root .env.
         settings_patch = patch('aig.api.load_settings', return_value=load_settings(local_file=None, environ={}))
@@ -85,10 +96,10 @@ class GameApiTests(unittest.TestCase):
 
     def test_create_demo_is_pregame_and_detached(self):
         result = self.post('/demo')
-        self.assertEqual(result['game'], {'turn': 0, 'activePlayerId': None, 'status': 'pre_game'})
+        self.assertEqual(result['game'], {'turn': 0, 'activePlayerId': None, 'status': 'pre_game', 'terminal': False, 'winnerPlayerId': None, 'victoryType': None})
         self.assertEqual((result['map']['width'], result['map']['height']), (12, 10))
         self.assertEqual(len(result['map']['tiles']), 120)
-        self.assertEqual([u['id'] for u in result['units']], ['unit-1', 'unit-2', 'unit-3', 'unit-4'])
+        self.assertEqual([u['id'] for u in result['units']], ['unit-1', 'unit-2'])
         self.assertEqual(result['cities'], [])
         result['units'][0]['hp'] = 1
         self.assertEqual(self.client.get('/api/game').json()['units'][0]['hp'], 100)
@@ -104,7 +115,7 @@ class GameApiTests(unittest.TestCase):
 
     def test_start_uses_engine_without_advancing_or_economy(self):
         result = self.start()
-        self.assertEqual(result['game'], {'turn': 0, 'activePlayerId': 'A', 'status': 'started'})
+        self.assertEqual(result['game'], {'turn': 0, 'activePlayerId': 'A', 'status': 'started', 'terminal': False, 'winnerPlayerId': None, 'victoryType': None})
         self.assertTrue(all(p['scienceStored'] == p['gold'] == 0 for p in result['players']))
         before = to_snapshot(self.session._state)
         response = self.client.post('/api/game/start')
@@ -123,7 +134,7 @@ class GameApiTests(unittest.TestCase):
         before = to_snapshot(self.session._state)
         dto = public_state(self.session._state)
         self.assertEqual(json.loads(json.dumps(dto)), self.client.get('/api/game').json())
-        self.assertEqual(set(dto), {'game', 'players', 'map', 'units', 'cities'})
+        self.assertEqual(set(dto), {'game', 'players', 'map', 'units', 'cities', 'viewerPlayerId', 'barbarianCamps'})
         self.assertNotIn('schema_version', dto)
         self.assertNotIn('next_unit_id', dto)
         self.assertNotIn('config', dto)
@@ -172,14 +183,14 @@ class GameApiTests(unittest.TestCase):
         self.assertEqual(self.found()['cities'][0]['id'], 'city-1')
         self.command('end_activation')
         result = self.found('unit-3', 'Azure Home')
-        self.assertEqual([c['id'] for c in result['cities']], ['city-1', 'city-2'])
+        self.assertEqual([c['id'] for c in result['cities']], ['city-2'])
 
     def test_city_allocator_skips_existing_ids(self):
         self.start()
         apply_command(self.session._state, FoundCity('A', 'unit-1', 'city-1', 'Existing'))
         self.command('end_activation')
         result = self.found('unit-3')
-        self.assertEqual([c['id'] for c in result['cities']], ['city-1', 'city-2'])
+        self.assertEqual([c['id'] for c in result['cities']], ['city-2'])
 
     def test_production_set_switch_clear_and_unlock_choices(self):
         self.start()
@@ -208,7 +219,7 @@ class GameApiTests(unittest.TestCase):
         self.assertEqual(result['players'][0]['scienceStored'], 1)
         self.found('unit-3', 'Blue City')
         result = self.command('end_activation')
-        self.assertEqual(result['game'], {'turn': 1, 'activePlayerId': 'A', 'status': 'started'})
+        self.assertEqual(result['game'], {'turn': 1, 'activePlayerId': 'A', 'status': 'started', 'terminal': False, 'winnerPlayerId': None, 'victoryType': None})
         self.assertTrue(all(c['productionStored'] > 0 for c in result['cities']))
 
     def test_commands_always_use_active_faction(self):
@@ -282,7 +293,7 @@ class GameApiTests(unittest.TestCase):
         for _ in range(40):
             result = self.command('end_activation')
         self.assertTrue(all('archery' in p['researchedTechnologies'] for p in result['players']))
-        self.assertGreaterEqual(len(result['units']), 4)
+        self.assertGreaterEqual(len(result['units']), 2)
         self.assertTrue(all('archer' in {c['unitType'] for c in town['availableProduction']} for town in result['cities']))
 
     def test_no_endpoint_accesses_external_services(self):
@@ -341,13 +352,13 @@ class GameApiTests(unittest.TestCase):
         self.post('/start')
         self.found()
         result = self.command('end_activation')
-        self.assertEqual(result['game'], {'turn': 1, 'activePlayerId': 'A', 'status': 'started'})
-        self.assertEqual({c['ownerId'] for c in result['cities']}, {'A', 'B'})
+        self.assertEqual(result['game'], {'turn': 1, 'activePlayerId': 'A', 'status': 'started', 'terminal': False, 'winnerPlayerId': None, 'victoryType': None})
+        self.assertEqual({c['ownerId'] for c in result['cities']}, {'A'})
         trace = result['aiActivations'][0]
         self.assertEqual(trace['player_id'], 'B')
-        self.assertEqual(trace['plan']['posture'], 'expand')
-        self.assertEqual(trace['commands_executed'][-1]['type'], 'EndActivation')
-        self.assertIn('FoundCity', [c['type'] for c in trace['commands_executed']])
+        self.assertNotIn('plan', trace)
+        self.assertNotIn('commands_executed', trace)
+        self.assertTrue(self.session.ai.latest_results[0].commands_executed)
         self.assertEqual(self.client.get('/api/game').json(), result)
 
     def test_human_commands_before_end_do_not_auto_play_human_or_ai(self):
@@ -375,10 +386,8 @@ class GameApiTests(unittest.TestCase):
         self.session.demo(versus_ai=True)
         self.session.start()
         response = self.session.execute(EndActivation)
-        response['aiActivations'][0]['commands_executed'].clear()
-        response['aiActivations'][0]['plan']['posture'] = 'changed'
-        self.assertTrue(self.session.current()['aiActivations'][0]['commands_executed'])
-        self.assertEqual(self.session.current()['aiActivations'][0]['plan']['posture'], 'expand')
+        response['aiActivations'][0]['actualProvider'] = 'changed'
+        self.assertEqual(self.session.current()['aiActivations'][0]['actualProvider'], 'heuristic')
 
     def test_browser_cannot_issue_commands_for_ai_actor(self):
         self.post('/demo/ai')
@@ -390,7 +399,7 @@ class GameApiTests(unittest.TestCase):
 
     def test_start_processes_ai_first_if_scenario_says_so(self):
         self.session.demo(versus_ai=True)
-        self.session._state.turn_order.reverse()
+        self.session._state.turn_order = ["B", "A", "barbarians"]
         result = self.session.start()
         self.assertEqual(result['game']['activePlayerId'], 'A')
         self.assertEqual(result['aiActivations'][0]['player_id'], 'B')

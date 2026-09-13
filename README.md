@@ -1,5 +1,12 @@
 # Aether, Iron & Glory
 
+Current runtime: **Environment V5 / Scenario V3 / snapshot v12**. Permanent total
+war, undefended city capture and zero-city elimination now permit conquest
+victory. Fog, resources, barbarians and frozen planner/model artifacts remain.
+The primary future comparison is Heuristic vs Luna.
+See [V5 rules and artifact decisions](docs/environment-v5.md) and
+[V5 verification](docs/environment-v5-verification.md).
+
 AIG is an experimental turn-based 4X strategy project. Its intended combination is:
 
 - Classic tile-based empire strategy.
@@ -27,7 +34,14 @@ dist/             Generated browser-ready output (not committed)
 
 ## Current Status
 
-Prototype 0.0.1 is manually playable in the browser: create/start the fixed two-faction demo, found cities, move and fight with units, choose production and research, then continue hot-seat play or face the conventional heuristic AI in Human vs Heuristic AI. The sprite map has six terrain types, five unit types, and city labels. The engine retains snapshot schema v8 and all existing rules. Human vs LLM adds local Ollama planning; Human vs OpenAI adds cloud planning. There is no procedural map generation, city combat/capture, authentication, multiplayer networking, or persistence UI.
+AI experiments now record independent environment, scenario, prompt, plan-schema,
+model-profile and benchmark versions plus source revision/dirty status. See
+[artifact selection and provenance](docs/benchmarking.md#experiment-artifacts-and-provenance)
+and the [preserved heuristic/Qwen/Luna baseline mapping](docs/baselines.md).
+`AIG_STRATEGY_PROMPT_VERSION` defaults to latest; explicit `v1` pins the original
+instructions. Benchmark reports always record concrete resolved identifiers.
+
+Prototype 0.0.1 is manually playable in the browser: create/start the fixed two-faction demo, found cities, move and fight with units, choose production and research, then continue hot-seat play or face the conventional heuristic AI in Human vs Heuristic AI. The sprite map has six terrain types, five unit types, and city labels. The engine uses snapshot schema v12. Human vs LLM adds local Ollama planning; Human vs OpenAI adds cloud planning. There is no procedural map generation, city HP/combat, authentication, multiplayer networking, or persistence UI. Undefended cities can be captured.
 
 ## Continuous Integration
 
@@ -138,7 +152,7 @@ The application intentionally holds one game in memory per process. Restarting
 Python loses the match; run one worker. Multiple browser tabs share the same game
 and do not synchronize automatically (use Refresh). This is a desktop demo with
 scrolling at narrow widths, simple sprites, clipped long city labels (full names
-in titles/details), and no animations, path preview, fog, city combat, or victory
+in titles/details), and no animations, path preview, city combat, or victory
 screen. Water/mountains remain impassable under the existing engine rules.
 
 ## Play the deterministic demo
@@ -161,9 +175,9 @@ The AI founds cities, researches Archery then Bronze Working, builds a small
 military before another Settler, defends against nearby superior forces, and
 moves/fights toward enemy cities. It stops nearby because city combat and victory
 conditions do not exist yet. All AI actions use existing commands. Heuristic
-mode needs no network services. Its latest plan and command sequence appear in the optional
-`aiActivations` field returned by `/api/game`; these traces are not saved in v8
-snapshots. See [AI architecture](docs/architecture.md#deterministic-heuristic-ai).
+mode needs no network services. Its operational provider summary appears in the optional
+`aiActivations` field returned by `/api/game`; plans and command traces remain
+backend-only to preserve fog. See [AI architecture](docs/architecture.md#deterministic-heuristic-ai).
 
 Choose **Human vs LLM** for the same game with Qwen providing only strategic
 plans for Azure (B). Python contacts the configured Ollama server; the browser
@@ -180,8 +194,8 @@ Keep `AIG_OLLAMA_THINK=false` and `AIG_OLLAMA_STREAM=false`; the provider reject
 configurations enabling either. The timeout must be finite and positive.
 
 The optional `aiActivations` response includes `requestedProvider`,
-`actualProvider`, `fallbackUsed`, `model`, `durationSeconds`, `retryCount`,
-`planReused`, `replanReason`, `planAgeTurns`, the plan and executed commands.
+`actualProvider`, `fallbackUsed`, `model`, `durationSeconds`, and `retryCount`.
+Discovery reasons, plans, and command coordinates are backend-only.
 `aiProviders` explicitly maps AI player IDs to the selected provider, independent
 of display names. Detailed, detached traces are available in Python through
 `session.ai.inference_traces` (latest 64 replans), never in the ordinary HUD or
@@ -208,13 +222,12 @@ Run a reproducible headless heuristic-vs-heuristic game from the repository root
 ```
 
 This validates state after every activation and prints command counts, technologies,
-and final snapshot/trace hashes. The 100-turn smoke run completes 200 activations,
-founds 3 cities, creates 20 units including the 4 starting units, moves 94 times,
-attacks 20 times, and researches Archery and Bronze Working for both factions.
-Repeated runs produce identical hashes, also matching the original heuristic
-controller before Ollama integration. Verification for this slice: **531 Python
-tests, 27 frontend tests**, and the frontend build. Snapshot schema remains **v8**;
-the inspected baseline was 499 Python tests and 26 frontend tests.
+and final snapshot/trace hashes. Environment V2 adds fog of war, persistent terrain
+and city discovery, Scout exploration, and the same information boundary for all
+providers. Global military strength remains visible; enemy deployments require sight.
+The fixed scenario, prompt, schema and model profiles remain V1. Snapshot v9 stores
+knowledge; v8 saves are explicitly unsupported. See [Environment V2 results and
+architecture](docs/environment-v2.md) for verification and replay details.
 
 `demo_game_setup()` supplies a fixed 12 by 10 square-grid map with grassland,
 plains, forest, hills, mountains and water. Both factions use manual human
@@ -243,8 +256,10 @@ for actor in setup.turn_order:
     apply_command(state, SetResearch(actor, Technology.ARCHERY))
     apply_command(state, EndActivation(actor))
 
+from aig.barbarians import BarbarianController
+BarbarianController().execute(state)  # Applications process this system phase automatically.
 assert state.active_player_id == "A" and state.turn == 1
-assert all(p.science_stored == 1 for p in state.players.values())
+assert all(state.players[p].science_stored == 1 for p in state.civilization_ids)
 state.validate()
 ```
 
@@ -261,7 +276,7 @@ only during owner `EndActivation`, retaining overflow and clearing the target.
 `available_technologies`, `research_remaining` and `unit_is_unlocked` queries.
 Current target and stored science are directly available as
 `PlayerState.research_target` and `PlayerState.science_stored`. Snapshots use
-schema v8 and preserve exact pre-game or mid-activation research state; old
+schema v9 and preserve exact pre-game or mid-activation research state; old
 schema versions are rejected, with no implicit migration.
 
 See [setup/start](docs/architecture.md#deterministic-game-setup-and-start) and
@@ -339,7 +354,7 @@ saved = from_snapshot(json.loads(json.dumps(to_snapshot(state))))
 assert (saved.units[scout.id].hp, saved.units[scout.id].moves_remaining) == (60, 1)
 ```
 
-All eight adjacent directions cost one movement point. Friends may stack; water, mountains, enemy units and enemy cities block travel. Over-budget or unreachable requests fail without mutation. Saves use schema v8 with player research state, a required nullable city production target, player gold, city food/production stores and all previous state; v1 through v7 saves are explicitly rejected without migration. Loading preserves exact pre-game and mid-activation state without starting play, collecting yields/science, growing cities, completing research/production or refreshing movement. See [movement rules](docs/architecture.md#land-movement-and-deterministic-pathfinding) for allowances and path tie-breaking.
+All eight adjacent directions cost one movement point. Friends may stack; water, mountains, enemy units and enemy cities block travel. Over-budget or unreachable requests fail without mutation. Saves use schema v9 with player research state, a required nullable city production target, player gold, city food/production stores and all previous state; v1 through v8 saves are explicitly rejected without migration. Loading preserves exact pre-game and mid-activation state without starting play, collecting yields/science, growing cities, completing research/production or refreshing movement. See [movement rules](docs/architecture.md#land-movement-and-deterministic-pathfinding) for allowances and path tie-breaking.
 
 `AttackUnit(actor_id, attacker_unit_id, target_unit_id)` targets one enemy and costs 1 movement. Melee units retaliate and a surviving attacker advances after killing the last enemy unit on a tile only if no enemy city blocks entry. Archers fire at Chebyshev distance 1 or 2 without retaliation, movement or line-of-sight checks. Settlers are temporarily destroyed instead of captured. Unit deaths do not eliminate factions. See [combat rules](docs/architecture.md#deterministic-unit-combat) for stats and deterministic damage.
 

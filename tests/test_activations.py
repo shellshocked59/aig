@@ -121,18 +121,14 @@ class ActivationTests(unittest.TestCase):
     def test_zero_survivors_is_terminal_and_keeps_history(self):
         state = example_state()
         state.eliminate_player("player-a")
-        state.eliminate_player("player-b")
-        self.assertEqual(state.turn_order, [])
-        self.assertEqual(len(state.players), 2)
-        self.assertTrue(all(player.eliminated for player in state.players.values()))
-        self.assertIsNone(state.active_player_id)
-        self.assertEqual(state.turn, 3)
-        state.validate()
-        with self.assertRaisesRegex(ValueError, "no active activation"):
-            state.finish_activation()
-        expected = deepcopy(state)
-        state.eliminate_player("player-b")
-        self.assertEqual(state, expected)
+        before = deepcopy(state)
+        with self.assertRaisesRegex(ValueError, "game has ended"):
+            state.eliminate_player("player-b")
+        self.assertEqual(state, before)
+        self.assertEqual(state.result.winner_player_id, "player-b")
+        # Zero survivors remain representable in a pre-game setup.
+        empty = type(state)(state.config)
+        self.assertEqual(from_snapshot(to_snapshot(empty)), empty)
 
     def test_pre_game_elimination_does_not_start_activation(self):
         state = activation_state(active=None, turn=0)
@@ -240,6 +236,7 @@ class EliminationSnapshotTests(unittest.TestCase):
     def test_terminal_snapshots_round_trip(self):
         state = example_state()
         for player_id in ("player-a", "player-b"):
+            state = example_state()
             state.eliminate_player(player_id)
             restored = from_snapshot(json.loads(json.dumps(to_snapshot(state))))
             self.assertEqual(restored, state)

@@ -159,6 +159,8 @@ class CombatCommandTests(unittest.TestCase):
     def test_empty_and_zero_survivor_states_rejected(self):
         self.assert_rejected(GameState(GameConfig(42)), AttackUnit("A", "u", "v"), "unknown command actor")
         state = combat_state()
+        state.turn = 0
+        state.active_player_id = None
         for player in "ABC":
             state.eliminate_player(player)
         self.assert_rejected(state, AttackUnit("A", "unit-1", "unit-2"), "eliminated player")
@@ -452,7 +454,7 @@ class CombatPersistenceTests(unittest.TestCase):
         command = AttackUnit("A", "unit-1", "unit-2")
         apply_command(state, command)
         snapshot = to_snapshot(state)
-        self.assertEqual(snapshot["schema_version"], 8)
+        self.assertEqual(snapshot["schema_version"], 12)
         restored = from_snapshot(json.loads(json.dumps(snapshot)))
         self.assertEqual(restored, state)
         self.assertEqual((restored.units["unit-1"].hp, restored.units["unit-1"].moves_remaining), (70, 1))
@@ -466,7 +468,7 @@ class CombatPersistenceTests(unittest.TestCase):
     def test_snapshot_requires_hp_and_rejects_derived_stats(self):
         baseline = to_snapshot(combat_state())
         self.assertEqual(set(baseline["units"][0]),
-                         {"id", "owner_id", "unit_type", "position", "moves_remaining", "hp"})
+                         {"id", "owner_id", "unit_type", "position", "moves_remaining", "hp", "home_camp_id"})
         missing = deepcopy(baseline)
         del missing["units"][0]["hp"]
         with self.assertRaisesRegex(ValueError, "exactly these fields"):

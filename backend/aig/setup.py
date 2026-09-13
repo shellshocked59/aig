@@ -4,7 +4,8 @@ from dataclasses import dataclass
 
 from aig.state import (
     ControllerType, GameConfig, GameMap, GameState, PlayerState, Position,
-    Terrain, TileState, UnitType, _identifier, _validate_city_spacing,
+    Terrain, ResourceType, TileState, UnitType, _identifier, _validate_city_spacing,
+    BarbarianCamp, FactionKind, BARBARIAN_ID,
 )
 
 
@@ -38,6 +39,8 @@ class GameSetup:
     tiles: tuple[tuple[Position, Terrain], ...]
     players: tuple[PlayerSetup, ...]
     turn_order: tuple[str, ...]
+    resources: tuple[tuple[Position, ResourceType], ...] = ()
+    camps: tuple[BarbarianCamp, ...] = ()
 
     def __post_init__(self) -> None:
         self.validate()
@@ -73,6 +76,18 @@ class GameSetup:
             if position in terrain_by_position:
                 raise ValueError("duplicate setup tile position")
             terrain_by_position[position] = terrain
+        if not isinstance(self.resources, tuple):
+            raise ValueError("setup.resources must be a tuple")
+        resources = set()
+        for pair in self.resources:
+            if (not isinstance(pair, tuple) or len(pair) != 2
+                    or not isinstance(pair[0], Position) or not isinstance(pair[1], ResourceType)):
+                raise ValueError("setup resource must be a (Position, ResourceType) tuple")
+            position, resource = pair
+            if position in resources or position not in terrain_by_position:
+                raise ValueError("duplicate or missing resource tile")
+            TileState(position, terrain_by_position[position], resource=resource)
+            resources.add(position)
         starts = []
         for player in self.players:
             position = player.starting_position
@@ -81,6 +96,20 @@ class GameSetup:
                 raise ValueError("starting position must exist on passable land within map bounds")
             _validate_city_spacing(position, starts)
             starts.append(position)
+        if not isinstance(self.camps, tuple):
+            raise ValueError("setup.camps must be a tuple")
+        ids, positions = set(), set()
+        for camp in self.camps:
+            if not isinstance(camp, BarbarianCamp):
+                raise ValueError("setup camp must be BarbarianCamp")
+            terrain = terrain_by_position.get(camp.position)
+            if (camp.id in ids or camp.position in positions or camp.position in starts
+                    or terrain is None or not terrain.land_passable):
+                raise ValueError("duplicate or illegal camp placement")
+            ids.add(camp.id)
+            positions.add(camp.position)
+        if any(p.id == BARBARIAN_ID for p in self.players):
+            raise ValueError("reserved system faction ID")
 
 
 def create_game(setup: GameSetup) -> GameState:
@@ -94,10 +123,20 @@ def create_game(setup: GameSetup) -> GameState:
         tiles={position: TileState(position, terrain) for position, terrain in setup.tiles},
         turn_order=list(setup.turn_order),
     )
+    for position, resource in setup.resources:
+        state.tiles[position].resource = resource
     players = {p.id: p for p in setup.players}
     for player_id in setup.turn_order:
         for unit_type in (UnitType.SETTLER, UnitType.WARRIOR):
             state.add_unit(player_id, unit_type, players[player_id].starting_position)
+    if setup.camps:
+        state.players[BARBARIAN_ID] = PlayerState(
+            BARBARIAN_ID, ControllerType.AI, kind=FactionKind.BARBARIAN,
+            researched_technologies=frozenset())
+        state.turn_order.append(BARBARIAN_ID)
+        state.camps = {c.id: c for c in setup.camps}
+        for camp in sorted(setup.camps, key=lambda c: c.id):
+            state.add_unit(BARBARIAN_ID, UnitType.WARRIOR, camp.position).home_camp_id = camp.id
     return state
 
 
@@ -108,6 +147,8 @@ def start_game(state: GameState) -> None:
     state.validate()
     if state.turn != 0 or state.active_player_id is not None:
         raise ValueError("start_game requires a pre-game state at turn zero")
-    if len(state.turn_order) < 2:
+    if len(state.civilization_ids) < 2:
         raise ValueError("start_game requires at least two live factions")
+    from aig.knowledge import update_knowledge
+    update_knowledge(state)
     state._begin_activation(state.turn_order[0])

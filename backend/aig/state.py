@@ -29,6 +29,34 @@ class ControllerType(StrEnum):
     AI = "ai"
 
 
+class FactionKind(StrEnum):
+    CIVILIZATION = "civilization"
+    BARBARIAN = "barbarian"
+
+
+class VictoryType(StrEnum):
+    CONQUEST = "conquest"
+
+
+@dataclass(frozen=True)
+class GameResult:
+    winner_player_id: str
+    victory_type: VictoryType = VictoryType.CONQUEST
+
+    def __post_init__(self):
+        _identifier(self.winner_player_id, "winner_player_id")
+        if not isinstance(self.victory_type, VictoryType):
+            raise ValueError("victory_type must be a VictoryType")
+
+
+def are_hostile(a: "PlayerState", b: "PlayerState") -> bool:
+    """Permanent total war; the barbarian system is one friendly faction."""
+    return a.id != b.id and not (a.kind is b.kind is FactionKind.BARBARIAN)
+
+
+BARBARIAN_ID = "barbarians"
+
+
 class Terrain(StrEnum):
     GRASSLAND = "grassland"
     PLAINS = "plains"
@@ -40,6 +68,14 @@ class Terrain(StrEnum):
     @property
     def land_passable(self) -> bool:
         return self not in (Terrain.MOUNTAINS, Terrain.WATER)
+
+
+class ResourceType(StrEnum):
+    WHEAT = "wheat"
+    CATTLE = "cattle"
+    IRON = "iron"
+    GEMS = "gems"
+    SPICES = "spices"
 
 
 class UnitType(StrEnum):
@@ -76,6 +112,10 @@ class UnitType(StrEnum):
     @property
     def ranged_strength(self) -> int | None:
         return 20 if self is UnitType.ARCHER else None
+
+    @property
+    def can_capture(self) -> bool:
+        return self.combat_strength > 0 and self.ranged_strength is None
 
     @property
     def attack_range(self) -> int:
@@ -160,14 +200,80 @@ class GameConfig:
             raise ValueError("config.debug_mode must be a boolean")
 
 
+@dataclass(frozen=True)
+class KnownCity:
+    city_id: str
+    owner_id: str
+    position: Position
+
+    def __post_init__(self) -> None:
+        _identifier(self.city_id, "known city.id")
+        _identifier(self.owner_id, "known city.owner_id")
+        if not isinstance(self.position, Position):
+            raise ValueError("known city.position must be a Position")
+
+    @property
+    def id(self) -> str:
+        return self.city_id
+
+
+@dataclass(frozen=True)
+class BarbarianCamp:
+    id: str
+    position: Position
+
+    def __post_init__(self):
+        self.validate()
+
+    def validate(self):
+        _identifier(self.id, "camp.id")
+        if not isinstance(self.position, Position):
+            raise ValueError("camp.position must be a Position")
+
+
+@dataclass(frozen=True)
+class KnownCamp:
+    id: str
+    position: Position
+    last_seen_turn: int
+
+    def __post_init__(self):
+        BarbarianCamp(self.id, self.position)
+        _integer(self.last_seen_turn, "camp.last_seen_turn", minimum=0)
+
+
+@dataclass
+class PlayerKnowledge:
+    explored_positions: set[Position] = field(default_factory=set)
+    discovered_cities: dict[str, KnownCity] = field(default_factory=dict)
+    discovered_camps: dict[str, "KnownCamp"] = field(default_factory=dict)
+
+    def validate(self) -> None:
+        if not isinstance(self.discovered_camps, dict):
+            raise ValueError("discovered_camps must be a dictionary")
+        for key, camp in self.discovered_camps.items():
+            if not isinstance(camp, KnownCamp) or key != camp.id:
+                raise ValueError("discovered_camps must map IDs to KnownCamp")
+        if not isinstance(self.explored_positions, set) or any(
+                not isinstance(p, Position) for p in self.explored_positions):
+            raise ValueError("explored_positions must be a set of Position")
+        if not isinstance(self.discovered_cities, dict) or any(
+                not isinstance(c, KnownCity) or key != c.city_id
+                for key, c in self.discovered_cities.items()):
+            raise ValueError("discovered_cities must map IDs to KnownCity")
+
+
 @dataclass
 class PlayerState:
     id: str
     controller: ControllerType
     eliminated: bool = False
+    has_ever_owned_city: bool = field(default=False, kw_only=True)
+    kind: FactionKind = field(default=FactionKind.CIVILIZATION, kw_only=True)
     gold: int = 0
     science_stored: int = 0
     research_target: Technology | None = None
+    knowledge: PlayerKnowledge = field(default_factory=PlayerKnowledge)
     researched_technologies: frozenset[Technology] = field(
         default_factory=lambda: frozenset({Technology.AGRICULTURE}),
     )
@@ -177,6 +283,20 @@ class PlayerState:
 
     def validate(self) -> None:
         _identifier(self.id, "player.id")
+        if type(self.has_ever_owned_city) is not bool:
+            raise ValueError("player.has_ever_owned_city must be a boolean")
+        if not isinstance(self.kind, FactionKind):
+            raise ValueError("player.kind must be a FactionKind")
+        if self.id == BARBARIAN_ID and self.kind is not FactionKind.BARBARIAN:
+            raise ValueError("reserved system faction ID")
+        if self.kind is FactionKind.BARBARIAN and (
+                self.id != BARBARIAN_ID or self.controller is not ControllerType.AI
+                or self.gold or self.science_stored or self.research_target is not None
+                or self.researched_technologies or self.eliminated or self.has_ever_owned_city):
+            raise ValueError("barbarian system faction cannot have civilization state")
+        if not isinstance(self.knowledge, PlayerKnowledge):
+            raise ValueError("player.knowledge must be PlayerKnowledge")
+        self.knowledge.validate()
         if not isinstance(self.controller, ControllerType):
             raise ValueError("player.controller must be a ControllerType")
         if type(self.eliminated) is not bool:
@@ -200,6 +320,7 @@ class TileState:
     position: Position
     terrain: Terrain = Terrain.GRASSLAND
     owner_id: str | None = None
+    resource: ResourceType | None = None
 
     def __post_init__(self) -> None:
         self.validate()
@@ -209,6 +330,11 @@ class TileState:
             raise ValueError("tile.position must be a Position")
         if not isinstance(self.terrain, Terrain):
             raise ValueError("tile.terrain must be a Terrain")
+        if self.resource is not None:
+            if not isinstance(self.resource, ResourceType):
+                raise ValueError("tile.resource must be a ResourceType or None")
+            if not self.terrain.land_passable:
+                raise ValueError("resources require workable land terrain")
         if self.owner_id is not None:
             _identifier(self.owner_id, "tile.owner_id")
 
@@ -248,18 +374,21 @@ class UnitState:
     unit_type: UnitType = UnitType.WARRIOR
     moves_remaining: int = field(kw_only=True)
     hp: int = field(default=MAX_UNIT_HP, kw_only=True)
+    home_camp_id: str | None = field(default=None, kw_only=True)
 
     def __init__(
         self, id: str, owner_id: str, position: Position,
         unit_type: UnitType = UnitType.WARRIOR, *,
         moves_remaining: int | _DefaultMovement = _DefaultMovement.ALLOWANCE,
         hp: int = MAX_UNIT_HP,
+        home_camp_id: str | None = None,
     ) -> None:
         self.id = id
         self.owner_id = owner_id
         self.position = position
         self.unit_type = unit_type
         self.hp = hp
+        self.home_camp_id = home_camp_id
         if not isinstance(unit_type, UnitType):
             raise ValueError("unit.unit_type must be a UnitType")
         self.moves_remaining = (
@@ -270,6 +399,8 @@ class UnitState:
 
     def validate(self) -> None:
         _identifier(self.id, "unit.id")
+        if self.home_camp_id is not None:
+            _identifier(self.home_camp_id, "unit.home_camp_id")
         _identifier(self.owner_id, "unit.owner_id")
         if not isinstance(self.position, Position):
             raise ValueError("unit.position must be a Position")
@@ -288,8 +419,8 @@ class GameState:
     """Sequential faction activation state; no activation executor is provided.
 
     turn is the global game turn, initially zero. It increments only after the
-    final live faction completes its activation while at least two survive.
-    With fewer than two survivors, active_player_id must be None. Pre-game
+    final live faction (the system phase, when present) completes its activation.
+    With fewer than two civilization survivors, active_player_id must be None. Pre-game
     states also allow no active player at turn zero.
     """
 
@@ -303,6 +434,15 @@ class GameState:
     units: dict[str, UnitState] = field(default_factory=dict)
     game_map: GameMap = field(default_factory=GameMap)
     next_unit_id: int = 1
+    camps: dict[str, BarbarianCamp] = field(default_factory=dict)
+    result: GameResult | None = None
+
+    @property
+    def civilization_ids(self) -> list[str]:
+        return [p for p in self.turn_order if self.players[p].kind is FactionKind.CIVILIZATION]
+
+    def is_barbarian(self, player_id: str) -> bool:
+        return self.players[player_id].kind is FactionKind.BARBARIAN
 
     def __post_init__(self) -> None:
         self.validate()
@@ -331,15 +471,23 @@ class GameState:
         for unit in self.units.values():
             if unit.owner_id == player_id:
                 unit.moves_remaining = unit.unit_type.movement_allowance
+        if self.is_barbarian(player_id):
+            from aig.barbarians import spawn_replacements
+            spawn_replacements(self)
 
     def add_unit(self, owner_id: str, unit_type: UnitType, position: Position) -> UnitState:
         """Place a fresh live unit during setup/rules, with a deterministic ID."""
         self.validate()
+        if self.result is not None:
+            raise ValueError("game has ended")
         unit, next_unit_id = self._prepare_unit(
             owner_id, unit_type, position, next_unit_id=self.next_unit_id,
         )
         self.units[unit.id] = unit
         self.next_unit_id = next_unit_id
+        if self.active_player_id is not None:
+            from aig.knowledge import update_knowledge
+            update_knowledge(self)
         return unit
 
     def _prepare_unit(
@@ -359,6 +507,8 @@ class GameState:
             raise ValueError("unit owner must be a live player")
         if not isinstance(unit_type, UnitType):
             raise ValueError("unit_type must be a UnitType")
+        if self.is_barbarian(owner_id) and unit_type is not UnitType.WARRIOR:
+            raise ValueError("barbarians use Warriors only")
         if not isinstance(position, Position):
             raise ValueError("unit.position must be a Position")
         if not self.can_enter(owner_id, position):
@@ -390,6 +540,10 @@ class GameState:
         city.validate()
         if city.owner_id not in self.players or self.players[city.owner_id].eliminated:
             raise ValueError("city owner must be a live player")
+        if self.players[city.owner_id].kind is FactionKind.BARBARIAN:
+            raise ValueError("barbarians cannot own cities")
+        if any(c.position == city.position for c in self.camps.values()):
+            raise ValueError("city cannot occupy a camp")
         if not self.game_map.contains(city.position):
             raise ValueError("city position is outside map bounds")
         tile = self.tiles.get(city.position)
@@ -403,6 +557,8 @@ class GameState:
     def add_city(self, city: CityState) -> CityState:
         """Add a caller-supplied live city during setup/rules; do not claim tiles."""
         self.validate()
+        if self.result is not None:
+            raise ValueError("game has ended")
         if not isinstance(city, CityState):
             raise ValueError("city must be a CityState")
         self._validate_city_placement(city)
@@ -410,19 +566,27 @@ class GameState:
             raise ValueError(f"duplicate city ID: {city.id!r}")
         _validate_city_spacing(city.position, (c.position for c in self.cities.values()))
         self.cities[city.id] = city
+        self.players[city.owner_id].has_ever_owned_city = True
+        if self.active_player_id is not None:
+            from aig.knowledge import update_knowledge
+            update_knowledge(self)
         return city
 
     def remove_city(self, city_id: str) -> None:
-        """Remove a live city, retaining tile ownership and its owner's faction.
+        """Remove a live city, retaining tiles and evaluating zero-city elimination.
 
         Unknown IDs raise ValueError, including repeated removal.
         """
         self.validate()
+        if self.result is not None:
+            raise ValueError("game has ended")
         city = self.get_city(city_id)
         del self.cities[city.id]
+        self._eliminate_if_cityless(city.owner_id)
 
     def can_enter(
         self, owner_id: str, position: Position, *, excluding_unit_id: str | None = None,
+        capture_unit_type: UnitType | None = None,
     ) -> bool:
         """Shared placement/movement legality for all current land unit types.
 
@@ -434,7 +598,13 @@ class GameState:
             self.game_map.contains(position)
             and tile is not None
             and tile.terrain.land_passable
-            and not any(c.position == position and c.owner_id != owner_id for c in self.cities.values())
+            and not any(c.position == position and c.owner_id != owner_id
+                        and not (capture_unit_type is not None and capture_unit_type.can_capture
+                                 and self.players[owner_id].kind is FactionKind.CIVILIZATION
+                                 and not self.players[owner_id].eliminated
+                                 and self.players[c.owner_id].kind is FactionKind.CIVILIZATION
+                                 and not self.players[c.owner_id].eliminated)
+                        for c in self.cities.values())
             and not any(
                 u.id != excluding_unit_id and u.position == position and u.owner_id != owner_id
                 for u in self.units.values()
@@ -453,8 +623,23 @@ class GameState:
         if player_id not in self.players:
             raise ValueError(f"cannot eliminate unknown player: {player_id!r}")
         player = self.players[player_id]
+        if self.is_barbarian(player_id):
+            raise ValueError("system faction cannot be eliminated")
         if player.eliminated:
             return
+        if self.result is not None:
+            raise ValueError("game has ended")
+        self._eliminate_player(player_id)
+
+    def _eliminate_if_cityless(self, player_id: str) -> None:
+        if (self.players[player_id].has_ever_owned_city
+                and not any(c.owner_id == player_id for c in self.cities.values())):
+            self._eliminate_player(player_id)
+
+    def _eliminate_player(self, player_id: str) -> None:
+        """Commit cleanup in an already validated ownership transition."""
+        player = self.players[player_id]
+        started = self.active_player_id is not None
         removed_index = self.turn_order.index(player_id)
         player.eliminated = True
         self.turn_order.pop(removed_index)
@@ -462,8 +647,10 @@ class GameState:
             del self.units[unit_id]
         for city_id in [c.id for c in self.cities.values() if c.owner_id == player_id]:
             del self.cities[city_id]
-        if len(self.turn_order) < 2:
+        if len(self.civilization_ids) < 2:
             self.active_player_id = None
+            if started and len(self.civilization_ids) == 1:
+                self.result = GameResult(self.civilization_ids[0])
         elif self.active_player_id == player_id:
             if removed_index == len(self.turn_order):
                 self.turn += 1
@@ -482,6 +669,7 @@ class GameState:
             ("players", self.players, PlayerState),
             ("cities", self.cities, CityState),
             ("units", self.units, UnitState),
+            ("camps", self.camps, BarbarianCamp),
         ):
             if not isinstance(entities, dict):
                 raise ValueError(f"{name} must be a dictionary keyed by ID")
@@ -524,9 +712,18 @@ class GameState:
             if self.active_player_id not in ordered_ids:
                 raise ValueError("active_player_id must appear in turn_order")
         live_ids = {player.id for player in self.players.values() if not player.eliminated}
+        if self.result is not None:
+            if (not isinstance(self.result, GameResult)
+                    or not isinstance(self.result.victory_type, VictoryType)
+                    or self.civilization_ids != [self.result.winner_player_id]
+                    or self.active_player_id is not None):
+                raise ValueError("invalid conquest result")
         if ordered_ids != live_ids:
             raise ValueError("every player that is not eliminated must appear exactly once in turn_order")
-        if len(self.turn_order) < 2:
+        system_ids = [p.id for p in self.players.values() if p.kind is FactionKind.BARBARIAN]
+        if system_ids and self.turn_order[-1:] != system_ids:
+            raise ValueError("system faction must be the final activation")
+        if len(self.civilization_ids) < 2:
             if self.active_player_id is not None:
                 raise ValueError("active_player_id must be None with fewer than two surviving players")
         elif self.active_player_id is None and self.turn != 0:
@@ -536,13 +733,42 @@ class GameState:
                 raise ValueError(f"{entity.id!r} owner_id references an unknown player")
             if entity.position not in self.tiles:
                 raise ValueError(f"{entity.id!r} position references an unknown tile")
+        for player in self.players.values():
+            owns_city = any(c.owner_id == player.id for c in self.cities.values())
+            if owns_city and not player.has_ever_owned_city:
+                raise ValueError("city owner must have has_ever_owned_city true")
+            if ((self.active_player_id is not None or self.turn > 0 or self.result is not None)
+                    and not player.eliminated
+                    and player.has_ever_owned_city and not owns_city):
+                raise ValueError("live historical city owner without cities must be eliminated")
+            if any(not self.game_map.contains(p) for p in player.knowledge.explored_positions):
+                raise ValueError("explored position outside map")
+            for camp in player.knowledge.discovered_camps.values():
+                if camp.position not in player.knowledge.explored_positions or camp.last_seen_turn > self.turn:
+                    raise ValueError("known camp must reference explored position and past turn")
+            for city in player.knowledge.discovered_cities.values():
+                if (city.owner_id not in self.players or city.owner_id == player.id
+                        or city.position not in player.knowledge.explored_positions):
+                    raise ValueError("known city must reference another faction and explored position")
         city_positions: set[Position] = set()
         for city in self.cities.values():
             self._validate_city_placement(city)
             _validate_city_spacing(city.position, city_positions)
             city_positions.add(city.position)
         occupants: dict[Position, str] = {}
+        camp_positions = set()
+        for camp in self.camps.values():
+            tile = self.tiles.get(camp.position)
+            if (not system_ids or tile is None or not tile.terrain.land_passable
+                    or camp.position in city_positions or camp.position in camp_positions):
+                raise ValueError("camp requires unique passable land, no city, and system faction")
+            camp_positions.add(camp.position)
         for unit in self.units.values():
+            if self.is_barbarian(unit.owner_id):
+                if unit.unit_type is not UnitType.WARRIOR:
+                    raise ValueError("barbarians use Warriors only")
+            elif unit.home_camp_id is not None:
+                raise ValueError("civilization unit cannot have home camp")
             if self.players[unit.owner_id].eliminated:
                 raise ValueError("live unit cannot belong to an eliminated player")
             if not self.tiles[unit.position].terrain.land_passable:

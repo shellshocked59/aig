@@ -1,6 +1,6 @@
 """Pure Ancient-era research and unit unlock queries; rules are never persisted."""
 
-from aig.state import PlayerState, Technology, UnitType
+from aig.state import PlayerState, Technology, UnitType, FactionKind
 
 
 def technology_cost(technology: Technology) -> int:
@@ -25,6 +25,8 @@ def _validate_player(player: PlayerState) -> None:
 def available_technologies(player: PlayerState) -> tuple[Technology, ...]:
     """Return unresearched options in enum declaration order."""
     _validate_player(player)
+    if player.kind is FactionKind.BARBARIAN:
+        return ()
     return tuple(tech for tech in Technology
                  if tech not in player.researched_technologies
                  and technology_prerequisites(tech) <= player.researched_technologies)

@@ -9,22 +9,22 @@ from openai import (
     PermissionDeniedError, RateLimitError,
 )
 
-from aig.ai.ollama import PROMPT_VERSION, SYSTEM_PROMPT
-from aig.ai.plan_schema import PLAN_SCHEMA_VERSION, canonical_json, parse_plan, plan_json_schema
+from aig.ai.prompts import resolve_prompt
+from aig.ai.plan_schema import PLAN_SCHEMAS, canonical_json, parse_plan, plan_json_schema
 from aig.ai.strategy import StrategicPlan, StrategicState, StrategyProviderError
 from aig.settings import OpenAISettings
-from aig.state import Technology, UnitType
+from aig.versions import LATEST_PLAN_SCHEMA_VERSION, resolve_version
 
 OPENAI_SCHEMA_VERSION = "strategic-plan-openai-v1"
 
 
-def openai_plan_json_schema() -> dict:
+def openai_plan_json_schema(version=None) -> dict:
     """Use documented Structured Outputs constraints; keep parse_plan unchanged.
 
     uniqueItems and minLength are outside the documented supported properties.
     Uniqueness and nonblank IDs are still enforced by the application parser.
     """
-    schema = plan_json_schema()
+    schema = plan_json_schema(version)
     for rule in schema["properties"].values():
         rule.pop("uniqueItems", None)
         rule.pop("minLength", None)
@@ -68,9 +68,13 @@ def usage_metrics(response) -> dict:
 class OpenAIStrategyProvider:
     name = "openai"
 
-    def __init__(self, settings: OpenAISettings, *, client=None, repair: bool = True):
+    def __init__(self, settings: OpenAISettings, *, client=None, repair: bool = True,
+                 prompt_version=None, plan_schema_version=None):
         if not settings.api_key:
             raise StrategyProviderError("OpenAI requires OPENAI_API_KEY when selected.")
+        self.prompt_version, self.system_prompt = resolve_prompt(prompt_version)
+        self.schema_version = resolve_version(plan_schema_version, available=PLAN_SCHEMAS,
+                                              latest=LATEST_PLAN_SCHEMA_VERSION)
         self.settings = settings
         self._client = client if client is not None else OpenAI(
             api_key=settings.api_key, timeout=settings.timeout_seconds, max_retries=0)
@@ -95,8 +99,9 @@ class OpenAIStrategyProvider:
                     previous_plan: StrategicPlan | None = None) -> StrategicPlan:
         state_json = canonical_json(state)
         previous_json = canonical_json(previous_plan.to_dict() if previous_plan else None)
-        options = {"production_priority": [v.value for v in UnitType],
-                   "research_priority": [v.value for v in Technology]}
+        schema = plan_json_schema(self.schema_version)
+        options = {field: schema["properties"][field]["items"]["enum"]
+                   for field in ("production_priority", "research_priority")}
         # Same versioned instructions, state, prior plan, and options as Ollama.
         messages = [{"role": "user", "content":
                      f"CURRENT STATE:\n{state_json}\n\nPREVIOUS PLAN:\n{previous_json}"
@@ -106,8 +111,8 @@ class OpenAIStrategyProvider:
             previous_plan=previous_plan.to_dict() if previous_plan else None,
             resulting_plan=None, requested_provider=self.name, actual_provider=None,
             model=self.settings.model, model_configuration=public_configuration(self.settings),
-            prompt_version=PROMPT_VERSION, schema_version=PLAN_SCHEMA_VERSION,
-            provider_schema_version=OPENAI_SCHEMA_VERSION, system_content=SYSTEM_PROMPT,
+            prompt_version=self.prompt_version, schema_version=self.schema_version,
+            provider_schema_version=OPENAI_SCHEMA_VERSION, system_content=self.system_prompt,
             serialized_state=state_json, serialized_previous_plan=previous_json,
             attempts=[], retry_count=0, fallback_used=False, wall_clock_seconds=0.0))
         self._last_trace = trace
@@ -118,11 +123,11 @@ class OpenAIStrategyProvider:
             started = perf_counter()
             try:
                 response = self._client.responses.create(
-                    model=self.settings.model, instructions=SYSTEM_PROMPT, input=messages,
+                    model=self.settings.model, instructions=self.system_prompt, input=messages,
                     reasoning={"effort": self.settings.reasoning_effort},
                     max_output_tokens=self.settings.max_output_tokens,
                     text={"format": {"type": "json_schema", "name": "strategic_plan",
-                                     "strict": True, "schema": openai_plan_json_schema()}},
+                                     "strict": True, "schema": openai_plan_json_schema(self.schema_version)}},
                     store=False,
                 )
             except APIError as error:
@@ -133,6 +138,10 @@ class OpenAIStrategyProvider:
                 if isinstance(request_id, str):
                     record["request_id"] = self._safe(request_id)[:200]
                 self._fail(trace, record, category, f"OpenAI request failed ({category}).")
+            except (ValueError, RecursionError):
+                # The SDK's HTTP JSON decoding can fail before it builds a Response
+                # or wraps the failure in APIError (including invalid Unicode).
+                self._fail(trace, record, "malformed_openai_response", "OpenAI response has unreadable JSON.")
             finally:
                 record["wall_clock_seconds"] = perf_counter() - started
                 trace["wall_clock_seconds"] += record["wall_clock_seconds"]
@@ -146,7 +155,8 @@ class OpenAIStrategyProvider:
             if status != "completed" or getattr(response, "error", None):
                 category = "incomplete_response" if status == "incomplete" else "malformed_openai_response"
                 self._fail(trace, record, category, "OpenAI response did not complete successfully.")
-            # Inspect typed content only for refusals. Text extraction uses the SDK helper.
+            # The SDK permits loosely typed responses. Validate message envelopes
+            # before using its output_text helper, which ignores non-text content.
             output = getattr(response, "output", None)
             if not isinstance(output, list):
                 self._fail(trace, record, "malformed_openai_response", "OpenAI response has malformed output.")
@@ -157,6 +167,15 @@ class OpenAIStrategyProvider:
                         self._fail(trace, record, "malformed_openai_response", "OpenAI response has malformed content.")
                     if any(getattr(part, "type", None) == "refusal" for part in content):
                         self._fail(trace, record, "refusal", "OpenAI refused the strategic-plan request.")
+                    message_status = getattr(item, "status", None)
+                    if message_status != "completed":
+                        category = ("incomplete_response" if message_status == "incomplete"
+                                    else "malformed_openai_response")
+                        self._fail(trace, record, category, "OpenAI response message did not complete successfully.")
+                    if (getattr(item, "role", None) != "assistant"
+                            or any(getattr(part, "type", None) != "output_text"
+                                   or not isinstance(getattr(part, "text", None), str) for part in content)):
+                        self._fail(trace, record, "malformed_openai_response", "OpenAI response has malformed content.")
             try:
                 raw = response.output_text
             except (AttributeError, TypeError):
@@ -167,7 +186,7 @@ class OpenAIStrategyProvider:
             if not raw.strip():
                 self._fail(trace, record, "empty_output", "OpenAI returned empty output.")
             try:
-                plan = parse_plan(raw, state)
+                plan = parse_plan(raw, state, self.schema_version)
             except (ValueError, RecursionError) as error:
                 reason = self._safe(str(error))[:300] if isinstance(error, ValueError) else "JSON nesting is too deep"
                 category = getattr(error, "category", "schema_validation")

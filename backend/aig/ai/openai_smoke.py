@@ -19,7 +19,8 @@ def main(argv=None) -> int:
     result = dict(provider="openai", fallback_used=False)
     try:
         settings = load_settings()
-        provider = OpenAIStrategyProvider(settings.openai, repair=False)
+        provider = OpenAIStrategyProvider(settings.openai, repair=False,
+                                          prompt_version=settings.ai.strategy_prompt_version)
         state = StrategicStateBuilder().build(create_game(human_vs_ai_demo_setup()), "B")
         plan = provider.create_plan(state)
         result["plan"] = plan.to_dict()

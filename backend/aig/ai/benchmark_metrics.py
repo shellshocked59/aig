@@ -4,8 +4,9 @@ from collections import Counter
 from dataclasses import asdict
 from statistics import mean, median
 
-from aig.commands import AttackUnit, EndActivation, FoundCity
-from aig.economy import city_yields
+from aig.commands import AttackUnit, EndActivation, FoundCity, MoveUnit
+from aig.knowledge import visible_enemy_units, vision_positions, known_resources
+from aig.economy import city_yields, worked_positions, resource_yields, Yields
 from aig.research import available_technologies
 from aig.state import UnitType
 
@@ -17,6 +18,7 @@ FAILURE_CATEGORIES = (
     "authentication_failure", "permission_denied", "model_not_available", "rate_limit",
     "connection_failure", "api_error", "malformed_openai_response", "refusal",
     "incomplete_response", "empty_output",
+    "dns_failure", "provider_exception", "provider_mismatch", "configuration_failure",
 )
 COUNTERS = (
     "activations_completed", "cities_founded", "settlers_produced", "attacks_executed",
@@ -28,6 +30,12 @@ COUNTERS = (
     "plans_created", "provider_calls", "plans_reused", "plan_changes", "target_changes",
     "posture_changes", "production_priority_changes", "research_priority_changes",
     "invalidated_plans", "fallback_count",
+    "tiles_newly_revealed", "tiles_newly_revealed_by_scouts", "scout_movement_commands",
+    "significant_discovery_replans",
+    "resource_discoveries_by_scouts", "cities_founded_near_known_resources",
+    "known_resources_in_radius_at_founding", "city_center_resources_used",
+    "resource_tile_workings", "activations_working_resources",
+    "resource_bonus_food", "resource_bonus_production", "resource_bonus_gold",
 )
 
 
@@ -82,6 +90,12 @@ def inference_metrics(traces: list[dict], context_size: int | None) -> dict:
 
 class RunMetrics:
     def __init__(self, state, controllers, command_writer):
+        from aig.ai.multifront_metrics import MultiFrontMetrics
+        self.multifront = MultiFrontMetrics(state)
+        from aig.ai.conquest_metrics import ConquestMetrics
+        self.conquest = ConquestMetrics(state)
+        from aig.ai.barbarian_metrics import BarbarianMetrics
+        self.barbarians = BarbarianMetrics(state)
         self.controllers = controllers
         self.command_writer = command_writer
         self.players = {p: Counter({key: 0 for key in COUNTERS}) for p in state.turn_order}
@@ -90,23 +104,72 @@ class RunMetrics:
         self.ages = {p: [] for p in state.turn_order}
         self.distances = {p: [] for p in state.turn_order}
         self.founded = []
+        self.resources_worked = {p: set() for p in state.players}
+        self.first_resource = {p: None for p in state.players}
         self.initial_technologies = {p: set(s.researched_technologies) for p, s in state.players.items()}
         self.activation = 0
         self.pending = None
+        self.first_contacts = {p: dict(enemy_city=None, enemy_unit=None) for p in state.players}
+        self.replan_visibility = {p: [] for p in state.players}
+        self._contacts(state, turn=state.turn, activation=0)
+
+    def _contacts(self, state, *, turn, activation):
+        for actor, player in state.players.items():
+            if self.first_resource[actor] is None and known_resources(state, actor):
+                self.first_resource[actor] = dict(turn=turn, activation=activation)
+            for kind, observed in (("enemy_city", bool(player.knowledge.discovered_cities)),
+                                   ("enemy_unit", any(not state.is_barbarian(u.owner_id)
+                                                      for u in visible_enemy_units(state, actor)))):
+                if observed and self.first_contacts[actor][kind] is None:
+                    self.first_contacts[actor][kind] = dict(turn=turn, activation=activation)
 
     def observe(self, phase, state, command):
+        self.conquest.observe(phase, state, command, self.activation)
+        self.barbarians.observe(phase, state, command, self.activation)
         actor = command.actor_id
         counts = self.players[actor]
         if phase == "before":
             self.pending = dict(turn=state.turn, activation=self.activation,
                                 player_activation=counts["activations_completed"], player_id=actor,
                                 command=dict(type=type(command).__name__, **asdict(command)), outcome={})
+            self.explored_before = {p: set(s.knowledge.explored_positions) for p, s in state.players.items()}
             self.units_before = {u.id: (u.owner_id, u.unit_type.value, u.hp) for u in state.units.values()}
-            if isinstance(command, EndActivation):
+            if isinstance(command, FoundCity):
+                center = state.units[command.settler_unit_id].position
+                self.founding_resources = [r for r in known_resources(state, actor)
+                    if max(abs(r["position"]["x"]-center.x), abs(r["position"]["y"]-center.y)) <= 1]
+            if isinstance(command, EndActivation) and not state.is_barbarian(actor):
                 self._activation_end(state, actor, self.pending["outcome"])
             return
 
+        self._contacts(state, turn=self.pending["turn"], activation=self.activation)
+        revealed = {}
+        for player_id, player in state.players.items():
+            count = len(player.knowledge.explored_positions - self.explored_before[player_id])
+            self.players[player_id]["tiles_newly_revealed"] += count
+            revealed[player_id] = count
+        scout = isinstance(command, MoveUnit) and self.units_before[command.unit_id][1] == "scout"
+        counts["scout_movement_commands"] += scout
+        if scout:
+            counts["tiles_newly_revealed_by_scouts"] += revealed[actor]
+        spawned_scout_sight = set().union(*(vision_positions(state.game_map, u.position, 3)
+            for u in state.units.values() if u.id not in self.units_before
+            and u.owner_id == actor and u.unit_type is UnitType.SCOUT))
+        if spawned_scout_sight:
+            counts["tiles_newly_revealed_by_scouts"] += len(spawned_scout_sight &
+                (state.players[actor].knowledge.explored_positions - self.explored_before[actor]))
         outcome = self.pending["outcome"]
+        outcome["conquest_events"] = self.conquest.last_events
+        outcome["barbarian_events"] = self.barbarians.last_events
+        outcome["tiles_newly_revealed"] = revealed
+        outcome["resource_discoveries"] = {
+            p: [r for r in known_resources(state, p)
+                if (r["position"]["x"], r["position"]["y"]) not in
+                {(v.x, v.y) for v in self.explored_before[p]}] for p in state.players}
+        newly_known = state.players[actor].knowledge.explored_positions - self.explored_before[actor]
+        scout_discoveries = newly_known if scout else newly_known & spawned_scout_sight
+        counts["resource_discoveries_by_scouts"] += sum(
+            p in state.tiles and state.tiles[p].resource is not None for p in scout_discoveries)
         counts["commands"] += 1
         counts["movement_commands"] += type(command).__name__ == "MoveUnit"
         if isinstance(command, AttackUnit):
@@ -130,21 +193,40 @@ class RunMetrics:
             counts["cities_founded"] += 1
             founded = {key: self.pending[key] for key in ("turn", "activation", "player_activation", "player_id")}
             founded["city_id"] = command.city_id
+            founded["known_resources_in_radius"] = self.founding_resources
+            center_resource = state.tiles[state.cities[command.city_id].position].resource
+            founded["center_resource"] = center_resource.value if center_resource else None
+            counts["cities_founded_near_known_resources"] += bool(self.founding_resources)
+            counts["known_resources_in_radius_at_founding"] += len(self.founding_resources)
+            counts["city_center_resources_used"] += center_resource is not None
             self.founded.append(founded)
             outcome["city_founded"] = founded
         elif isinstance(command, EndActivation):
             produced = [dict(unit_id=u.id, player_id=u.owner_id, type=u.unit_type.value)
                         for u in sorted(state.units.values(), key=lambda u: u.id) if u.id not in self.units_before]
             for unit in produced:
+                if state.is_barbarian(unit["player_id"]):
+                    continue
                 self.produced[unit["player_id"]][unit["type"]] += 1
                 self.players[unit["player_id"]]["settlers_produced"] += unit["type"] == "settler"
-            outcome["units_produced"] = produced
+            outcome["units_produced"] = [u for u in produced if not state.is_barbarian(u["player_id"])]
             counts["activations_completed"] += 1
         self.command_writer.write(self.pending)
 
     def _activation_end(self, state, actor, outcome):
         counts = self.players[actor]
         cities = [c for c in state.cities.values() if c.owner_id == actor]
+        # Sample the actual pre-growth assignments that this EndActivation resolves.
+        workings = [p for c in cities for p in [c.position, *worked_positions(state, c)]
+                    if state.tiles[p].resource is not None]
+        bonus = sum((resource_yields(state.tiles[p].resource) for p in workings), Yields())
+        self.resources_worked[actor].update(workings)
+        counts["resource_tile_workings"] += len(workings)
+        counts["activations_working_resources"] += bool(workings)
+        for key in ("food", "production", "gold"):
+            counts["resource_bonus_" + key] += getattr(bonus, key)
+        outcome["resource_bonus_yields"] = asdict(bonus)
+        outcome["resource_tiles_worked"] = [asdict(p) for p in workings]
         unset = [c for c in cities if c.production_target is None]
         counts["activations_with_no_production_target"] += bool(unset)
         counts["city_activations_without_production_target"] += len(unset)
@@ -173,6 +255,7 @@ class RunMetrics:
                        production_stored_before_economy=sum(c.production_stored for c in cities))
 
     def record_plan(self, actor, controller):
+        self.multifront.record(actor, controller)
         counts = self.players[actor]
         trace = controller.last_trace
         counts["plans_reused"] += trace is None
@@ -180,11 +263,23 @@ class RunMetrics:
         self.postures[actor][controller.previous_plan.posture.value] += 1
         if trace is None:
             return
+        counts["significant_discovery_replans"] += trace["replan_reason"] in (
+            "first_enemy_city_discovered", "first_enemy_military_contact",
+            "first_camp_discovered", "first_barbarian_contact")
+        view = trace["strategic_state"]
+        self.replan_visibility[actor].append(dict(turn=trace["turn"],
+            visible_enemy_military_strength=view["visible_enemy_military_strength"],
+            nearest_visible_enemy_unit_distance=view["nearest_visible_enemy_unit_distance"],
+            known_resource_count=len(view["known_resources"]),
+            known_resources_by_type=dict(sorted(Counter(r["type"] for r in view["known_resources"]).items())),
+            resources_inside_city_radii=sum(r["inside_own_city_radius"] for r in view["known_resources"]),
+            resources_with_no_known_owner=[r for r in view["known_resources"] if r["ownerId"] is None]))
         counts["plans_created"] += 1
         counts["provider_calls"] += 1
         counts["invalidated_plans"] += trace["replan_reason"] == "invalid_target"
         counts["fallback_count"] += trace["fallback_used"]
-        old, new = trace["previous_plan"], trace["resulting_plan"]
+        old = trace.get("invalidated_previous_plan") or trace["previous_plan"]
+        new = trace["resulting_plan"]
         if old is not None:
             counts["plan_changes"] += old != new
             counts["target_changes"] += any(old[f] != new[f] for f in ("primary_enemy_id", "target_city_id"))
@@ -194,6 +289,8 @@ class RunMetrics:
     def finish(self, state):
         players = {}
         for actor, counts in self.players.items():
+            if state.is_barbarian(actor):
+                continue
             cities = [c for c in state.cities.values() if c.owner_id == actor]
             units = [u for u in state.units.values() if u.owner_id == actor]
             player = state.players[actor]
@@ -208,10 +305,32 @@ class RunMetrics:
                                  units_remaining_by_type=dict(sorted(Counter(u.unit_type.value for u in units).items())),
                                  units_produced_by_type=dict(sorted(self.produced[actor].items())),
                                  posture_counts=dict(sorted(self.postures[actor].items())))
+            players[actor].update(
+                resource_tiles_discovered=len(known_resources(state, actor)),
+                resource_discoveries_by_type=dict(sorted(Counter(r["type"] for r in known_resources(state, actor)).items())),
+                first_resource_discovered=self.first_resource[actor],
+                resource_tiles_worked=len(self.resources_worked[actor]),
+                explored_tile_count=len(player.knowledge.explored_positions),
+                map_explored_percent=100 * len(player.knowledge.explored_positions) /
+                    (state.game_map.width * state.game_map.height) if state.game_map.width else 0.0,
+                discovered_enemy_city_count=len(player.knowledge.discovered_cities),
+                first_contacts=self.first_contacts[actor],
+                visibility_at_replans=self.replan_visibility[actor])
             self._averages(players[actor], self.ages[actor], self.distances[actor])
-        numeric = [k for k, v in next(iter(players.values())).items() if type(v) is int]
+        barbarian_players, barbarian_observer = self.barbarians.finish(state)
+        conquest, conquest_players = self.conquest.finish(state)
+        fronts = self.multifront.finish()
+        for actor in players:
+            players[actor].update(fronts[actor])
+            players[actor].update(barbarian_players[actor])
+            players[actor].update(conquest_players[actor])
+        numeric = [k for k, v in next(iter(players.values())).items()
+                   if type(v) is int and all(type(p[k]) is int for p in players.values())
+                   and k != "first_city_capture_turn"]
         total = {k: sum(p[k] for p in players.values()) for k in numeric}
-        for field in ("units_remaining_by_type", "units_produced_by_type", "posture_counts"):
+        total['maximum_simultaneous_visible_enemy_civilizations'] = max(
+            p['maximum_simultaneous_visible_enemy_civilizations'] for p in players.values())
+        for field in ("units_remaining_by_type", "units_produced_by_type", "posture_counts", "resource_discoveries_by_type"):
             combined = Counter()
             for player in players.values():
                 combined.update(player[field])
@@ -220,6 +339,11 @@ class RunMetrics:
                        [v for values in self.distances.values() for v in values])
         total.update(global_turns_completed=state.turn, cities_founded_at=self.founded,
                      technologies_researched={p: m["technologies_researched"] for p, m in players.items()})
+        total["world_resource_tiles"] = sum(t.resource is not None for t in state.tiles.values())
+        total["barbarian_spawning"] = barbarian_observer
+        total.update(conquest)
+        total["world_resources_by_type"] = dict(sorted(Counter(t.resource.value for t in state.tiles.values()
+                                                             if t.resource is not None).items()))
         return total, players
 
     @staticmethod

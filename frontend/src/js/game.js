@@ -1,4 +1,4 @@
-import { escapeHtml as esc, faction, label, terrainSprites, unitSprites } from './presentation.js';
+import { escapeHtml as esc, faction, label, terrainSprites, unitSprites, resourceSprites, campSprite } from './presentation.js';
 
 /** Small DOM view/controller. No simulation, pathfinding or optimistic mutation. */
 export function mountGame(root, api) {
@@ -69,13 +69,13 @@ export function mountGame(root, api) {
 
   function pieceButton(piece, kind, compact = false) {
     const selected = kind === 'unit' ? piece.id === selectedUnitId : piece.id === selectedCityId;
-    const name = kind === 'unit' ? label(piece.type) : piece.name;
+    const name = kind === 'unit' ? label(piece.type) : (piece.name || 'Remembered city');
     return `<button type="button" class="piece ${kind} ${compact ? 'compact' : ''} ${faction(piece.ownerId).className} ${selected ? 'selected-piece' : ''}"
       data-action="${kind}" data-id="${esc(piece.id)}" aria-pressed="${selected}"
       aria-label="${esc(name)} ${esc(piece.id)}, ${esc(faction(piece.ownerId).name)}, at ${piece.x}, ${piece.y}"
       title="${esc(name)} · ${esc(faction(piece.ownerId).name)} · ${esc(piece.id)}" ${disabled()}>
       ${sprite(kind === 'unit' ? unitSprites[piece.type] : 'sprite-city')}
-      ${kind === 'city' ? `<span class="city-label">${esc(piece.name)} <b>${piece.population}</b></span>` : `<span class="faction-badge">${esc(piece.ownerId)}</span>`}
+      ${kind === 'city' ? `<span class="city-label">${esc(piece.name || 'Remembered city')} <b>${piece.population ?? '?'}</b></span>` : `<span class="faction-badge">${esc(piece.ownerId)}</span>`}
     </button>`;
   }
 
@@ -85,11 +85,13 @@ export function mountGame(root, api) {
         const units = state.units.filter((u) => at(u, tile));
         const town = state.cities.find((c) => at(c, tile));
         const selected = Boolean(at(tile, selectedTile));
-        return `<div class="map-cell ${faction(tile.ownerId).className} ${tile.ownerId ? 'owned' : ''} ${selected ? 'selected-tile' : ''}"
+        return `<div class="map-cell ${tile.explored === false ? 'unexplored' : tile.visible === false ? 'fogged' : ''} ${faction(tile.ownerId).className} ${tile.ownerId ? 'owned' : ''} ${selected ? 'selected-tile' : ''}"
           style="grid-column:${tile.x - state.map.origin.x + 1};grid-row:${tile.y - state.map.origin.y + 1}">
-          <button type="button" id="tile-${tile.x}-${tile.y}" class="tile sprite ${terrainSprites[tile.terrain]}" data-action="tile" data-x="${tile.x}" data-y="${tile.y}"
-            aria-label="${label(tile.terrain)} at ${tile.x}, ${tile.y}${tile.ownerId ? `, ${esc(faction(tile.ownerId).name)}` : ''}" aria-pressed="${selected}" ${disabled()}></button>
+          <button type="button" id="tile-${tile.x}-${tile.y}" class="tile sprite ${terrainSprites[tile.terrain] || 'unknown-terrain'}" data-action="tile" data-x="${tile.x}" data-y="${tile.y}"
+            aria-label="${tile.terrain ? label(tile.terrain) : 'Unexplored'} at ${tile.x}, ${tile.y}${tile.ownerId ? `, ${esc(faction(tile.ownerId).name)}` : ''}" aria-pressed="${selected}" ${disabled()}></button>
+          ${tile.explored !== false && resourceSprites[tile.resource] ? `<span class="resource-icon" role="img" aria-label="${label(tile.resource)}" title="${label(tile.resource)}"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#30291f" stroke-width="1.5">${resourceSprites[tile.resource]}</svg></span>` : ''}
           ${town ? pieceButton(town, 'city') : ''}
+          ${tile.explored !== false && (state.barbarianCamps || []).some((c) => at(c, tile) && c.live_exists !== false) ? `<span class="camp-icon" role="img" aria-label="Barbarian camp" title="${tile.visible === false ? 'Remembered barbarian camp; current status unknown' : 'Barbarian camp'}">${campSprite}</span>` : ''}
           <div class="map-units ${town ? 'with-city' : ''}">${units.slice(0, 2).map((u) => pieceButton(u, 'unit', units.length > 1 || Boolean(town))).join('')}</div>
           ${units.length > 2 ? `<button class="stack-count" data-action="inspect" data-x="${tile.x}" data-y="${tile.y}" aria-label="Inspect all ${units.length} units at ${tile.x}, ${tile.y}" ${disabled()}>+${units.length - 2}</button>` : ''}
         </div>`;
@@ -118,6 +120,9 @@ export function mountGame(root, api) {
     const selected = city();
     if (!selected) return '';
     const owned = selected.ownerId === active()?.id;
+    if (selected.currentlyVisible === false || selected.liveExists === false) {
+      return `<section class="panel" aria-label="Selected city"><h2>Remembered city</h2><p>${esc(selected.id)} ? ${esc(faction(selected.ownerId).name)} ? ${selected.x}, ${selected.y}</p><p>${selected.liveExists === false ? 'No city currently visible at this location.' : 'Outside current sight. Current details unknown.'}</p></section>`;
+    }
     return `<section class="panel ${faction(selected.ownerId).className}" aria-label="Selected city">
       <p class="eyebrow">${esc(faction(selected.ownerId).name)} · ${esc(selected.id)}</p>
       <h2>${sprite('sprite-city')}${esc(selected.name)}</h2>
@@ -153,11 +158,11 @@ export function mountGame(root, api) {
     const focusId = root.contains(root.ownerDocument.activeElement) ? root.ownerDocument.activeElement?.id : null;
     const player = active();
     root.innerHTML = `<header class="masthead"><div><p class="eyebrow">A small world. An unwritten history.</p><h1>Aether, Iron <span>&amp;</span> Glory</h1></div><span class="edition">Deterministic demo · ${modeLabel()}</span></header>
-      <div class="message-bar"><p role="${error ? 'alert' : 'status'}" class="${error ? 'error' : ''}">${esc(error || (busy ? busyMessage : notice || 'Two factions. One shared world.'))}</p><button class="quiet" data-action="refresh" ${disabled()}>Refresh</button></div>
+      <div class="message-bar"><p role="${error ? 'alert' : 'status'}" class="${error ? 'error' : ''}">${esc(error || (busy ? busyMessage : notice || 'One shared world.'))}</p><button class="quiet" data-action="refresh" ${disabled()}>Refresh</button></div>
       ${!state ? `<section class="welcome"><div class="crest">AIG</div><p class="eyebrow">The first expedition</p><h2>A world ready to settle</h2><p>Lead two rival factions across a fixed world.<br>Found cities, raise armies, and take turns shaping their history.</p><button class="primary" data-action="demo" ${disabled()}>New Demo Game · Hot-seat</button><button class="primary" data-action="demo-ai" ${disabled()}>Human vs Heuristic AI</button><button class="quiet" data-action="demo-configured" ${disabled()}>Human vs Configured AI</button><button class="quiet" data-action="demo-llm" ${disabled()}>Human vs LLM</button><button class="quiet" data-action="demo-openai" ${disabled()}>Human vs OpenAI</button><p class="hint">Play hot-seat with two people, command both sides, or face the configured AI, heuristic AI, Ollama (Human vs LLM), or OpenAI.</p></section>` : `
-      <section class="hud ${faction(player?.id).className}" aria-label="Game status"><div class="turn"><small>Turn</small><strong>${state.game.turn}</strong></div><div class="active-faction"><small>${state.game.status === 'started' ? 'Active faction' : state.game.status === 'terminal' ? 'Game ended' : 'Awaiting your command'}</small><strong>${player ? esc(faction(player.id).name) : 'Demo ready'}</strong></div><div><small>Treasury</small><strong>${player?.gold ?? '—'} <span>gold</span></strong></div><div><small>Science · ${label(player?.researchTarget)}</small><strong>${player?.scienceStored ?? '—'}</strong></div><button class="primary" data-action="${playing() ? 'end' : 'start'}" ${disabled(state.game.status === 'terminal' || active()?.controller === 'ai')}>${state.game.status === 'terminal' ? 'Game ended' : active()?.controller === 'ai' ? 'AI turn...' : playing() ? 'End Turn' : 'Start Game'}</button></section>
-      <div class="game-layout"><section class="world-frame" aria-label="Game board"><div class="world-heading"><h2>The known world</h2><span>${state.map.width} × ${state.map.height} · square grid</span></div>${renderMap()}<div class="world-footer"><span class="faction-a">A · Amber League</span><span class="faction-b">B · Azure Union</span><span>Click pieces to inspect · Esc clears</span></div></section>
-      <aside aria-label="Orders and details">${state.game.status === 'pre_game' ? '<section class="panel"><h2>Prepare the expedition</h2><p>Amber acts first. Press Start Game to begin. Each faction starts with a Settler and a Warrior.</p></section>' : ''}${renderUnit()}${renderCity()}${renderResearch()}${renderTile()}</aside></div>
+      <section class="hud ${faction(player?.id).className}" aria-label="Game status"><div class="turn"><small>Turn</small><strong>${state.game.turn}</strong></div><div class="active-faction"><small>${state.game.status === 'started' ? 'Active faction' : state.game.status === 'terminal' ? 'Game ended' : 'Awaiting your command'}</small><strong>${state.game.winnerPlayerId ? `${esc(faction(state.game.winnerPlayerId).name)} wins &mdash; Conquest` : player ? esc(faction(player.id).name) : 'Demo ready'}</strong></div><div><small>Treasury</small><strong>${player?.gold ?? '—'} <span>gold</span></strong></div><div><small>Science · ${label(player?.researchTarget)}</small><strong>${player?.scienceStored ?? '—'}</strong></div><button class="primary" data-action="${playing() ? 'end' : 'start'}" ${disabled(state.game.status === 'terminal' || active()?.controller === 'ai')}>${state.game.status === 'terminal' ? 'Game ended' : active()?.controller === 'ai' ? 'AI turn...' : playing() ? 'End Turn' : 'Start Game'}</button></section>
+      <div class="game-layout"><section class="world-frame" aria-label="Game board"><div class="world-heading"><h2>The known world</h2><span>${state.map.width} × ${state.map.height} · square grid</span></div>${renderMap()}<div class="world-footer">${state.players.filter((p) => p.kind !== 'barbarian').map((p) => `<span class="${faction(p.id).className}">${esc(p.id)} &middot; ${esc(faction(p.id).name)}</span>`).join('')}<span>Click pieces to inspect · Esc clears</span></div></section>
+      <aside aria-label="Orders and details">${state.game.status === 'pre_game' ? '<section class="panel"><h2>Prepare the expedition</h2><p>Press Start Game to begin. Each faction starts with a Settler and a Warrior.</p></section>' : ''}${renderUnit()}${renderCity()}${renderResearch()}${renderTile()}</aside></div>
       <section class="forces" aria-label="Active faction forces"><h2>${player ? `${esc(faction(player.id).name)} · forces` : 'Expedition roster'}</h2><div>${state.units.filter((u) => !player || u.ownerId === player.id).map((u) => `<button class="roster-button ${faction(u.ownerId).className}" data-action="unit" data-id="${esc(u.id)}" aria-pressed="${u.id === selectedUnitId}" ${disabled()}>${sprite(unitSprites[u.type])}<span>${label(u.type)} <small>${esc(u.id)} · ${u.movesRemaining}/${u.maxMovement} moves · ${u.x}, ${u.y}</small></span></button>`).join('') || '<p class="hint">No remaining units. Select a city to choose production.</p>'}</div></section>
       <footer class="session-footer"><span>${modeLabel()} · ${state.cities.length} cities · ${state.units.length} units</span><button class="quiet" data-action="demo" ${disabled()}>Reset Demo · Hot-seat</button><button class="quiet" data-action="demo-ai" ${disabled()}>Human vs Heuristic AI</button><button class="quiet" data-action="demo-configured" ${disabled()}>Human vs Configured AI</button><button class="quiet" data-action="demo-llm" ${disabled()}>Human vs LLM</button><button class="quiet" data-action="demo-openai" ${disabled()}>Human vs OpenAI</button></footer>`}`;
     if (focusId) root.ownerDocument.getElementById(focusId)?.focus({ preventScroll: true });
@@ -186,7 +191,7 @@ export function mountGame(root, api) {
     if (action === 'demo-llm') return run(async () => { const result = await api.createLlmDemoGame(); clearSelection(); return result; }, 'Human vs LLM ready. Press Start Game.');
     if (action === 'demo-openai') return run(async () => { const result = await api.createOpenAiDemoGame(); clearSelection(); return result; }, 'Human vs OpenAI ready. Press Start Game.');
     if (action === 'refresh') return run(api.getGame);
-    if (action === 'start') return run(api.startGame, 'Amber League takes the first activation.');
+    if (action === 'start') return run(api.startGame, 'The first activation is ready.');
     if (action === 'end') return run(api.endActivation,
       versusAi() ? 'AI turn complete. Your next activation is ready.' : 'Activation complete. Pass control to the active faction.',
       versusAi() ? 'AI turn...' : 'Resolving…');

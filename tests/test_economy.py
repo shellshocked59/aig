@@ -94,6 +94,8 @@ class YieldQueryTests(unittest.TestCase):
                 self.assertEqual(len(positions), count)
                 self.assertTrue(all(state.game_map.contains(p) for p in positions))
         state = economy_state()
+        for player in state.players.values():
+            player.knowledge.explored_positions.clear()
         offset = Position(-5, -7)
         state.game_map = GameMap(8, 5, offset)
         state.tiles = {Position(p.x + offset.x, p.y + offset.y):
@@ -187,6 +189,8 @@ class CitySpacingTests(unittest.TestCase):
                 with self.subTest(owner=owner, position=position):
                     state = economy_state()
                     state.cities["a"].owner_id = owner
+                    for p in state.players.values():
+                        p.has_ever_owned_city = any(c.owner_id == p.id for c in state.cities.values())
                     settler = state.add_unit("A", UnitType.SETTLER, position)
                     before = deepcopy(state)
                     command = FoundCity("A", settler.id, "new", "New")
@@ -212,6 +216,7 @@ class CitySpacingTests(unittest.TestCase):
                         state.add_city(candidate)
                     self.assertEqual(state, before)
                     state.cities["b"] = candidate
+                    state.players[owner].has_ever_owned_city = True
                     for check in (state.validate, lambda: to_snapshot(state),
                                   lambda: GameState(**vars(state))):
                         with self.assertRaisesRegex(ValueError, "distance 3"):
@@ -220,6 +225,7 @@ class CitySpacingTests(unittest.TestCase):
                     row = deepcopy(snapshot["cities"][0])
                     row.update(id="b", owner_id=owner, position={"x": position.x, "y": position.y})
                     snapshot["cities"].append(row)
+                    next(p for p in snapshot["players"] if p["id"] == owner)["has_ever_owned_city"] = True
                     with self.assertRaisesRegex(ValueError, "distance 3"):
                         from_snapshot(snapshot)
 
@@ -373,6 +379,8 @@ class EconomyActivationTests(unittest.TestCase):
     def test_round_wrap_collects_once_for_each_owner(self):
         state = economy_state(terrain=Terrain.WATER)
         state.cities["a"].owner_id = "C"
+        for p in state.players.values():
+            p.has_ever_owned_city = any(c.owner_id == p.id for c in state.cities.values())
         for owner in "ABC":
             apply_command(state, EndActivation(owner))
         self.assertEqual((state.turn, state.active_player_id, state.players["C"].gold), (1, "A", 1))
@@ -405,6 +413,8 @@ class EconomyActivationTests(unittest.TestCase):
         for active, successor, turn in (("A", "B", 0), ("C", "A", 1), ("A", None, 0)):
             state = economy_state(terrain=Terrain.WATER)
             state.cities["a"].owner_id = active
+            for p in state.players.values():
+                p.has_ever_owned_city = any(c.owner_id == p.id for c in state.cities.values())
             state.active_player_id = active
             city = state.cities["a"]
             city.food_stored = 14
@@ -439,7 +449,8 @@ class EconomyActivationTests(unittest.TestCase):
 
     def test_founded_city_participates_in_same_activation_economy(self):
         state = economy_state()
-        state.remove_city("a")
+        del state.cities["a"]
+        state.players["A"].has_ever_owned_city = False
         settler = state.add_unit("A", UnitType.SETTLER, Position(1, 1))
         apply_command(state, FoundCity("A", settler.id, "new", "New"))
         city = state.cities["new"]
@@ -491,7 +502,7 @@ class EconomyPersistenceTests(unittest.TestCase):
         state.turn = 9
         before = deepcopy(state)
         snapshot = to_snapshot(state)
-        self.assertEqual(snapshot["schema_version"], 8)
+        self.assertEqual(snapshot["schema_version"], 12)
         restored = from_snapshot(json.loads(json.dumps(snapshot)))
         self.assertEqual(restored, before)
         self.assertEqual(state, before)
@@ -503,7 +514,7 @@ class EconomyPersistenceTests(unittest.TestCase):
     def test_fields_required_and_derived_data_rejected(self):
         snapshot = to_snapshot(economy_state())
         self.assertEqual(set(snapshot["players"][0]), {"id", "controller", "eliminated", "gold",
-                     "science_stored", "research_target", "researched_technologies"})
+                     "science_stored", "research_target", "researched_technologies", "knowledge", "kind", "has_ever_owned_city"})
         self.assertEqual(set(snapshot["cities"][0]),
                          {"id", "owner_id", "position", "name", "population", "food_stored", "production_stored", "production_target"})
         for collection, fields in (("players", ("gold",)),

@@ -14,7 +14,13 @@ from aig.commands import (
 )
 from aig.economy import city_yields
 from aig.movement import find_path
-from aig.scenarios import demo_game_setup
+from aig.scenarios import scenario_setup
+
+# Preserve pre-barbarian setup regressions against the explicit V2 scenario.
+def demo_game_setup():
+    setup = scenario_setup('v2')
+    return replace(setup, players=tuple(replace(p, controller=ControllerType.HUMAN) for p in setup.players))
+
 from aig.settings import load_settings
 from aig.setup import GameSetup, PlayerSetup, create_game, start_game
 from aig.snapshots import from_snapshot, to_snapshot
@@ -167,6 +173,8 @@ class StartGameTests(unittest.TestCase):
         state.add_city(CityState("b", "B", Position(9, 7), name="Beta", food_stored=100,
                                  production_stored=100, production_target=UnitType.WARRIOR))
         expected = deepcopy(state)
+        from aig.knowledge import update_knowledge
+        update_knowledge(expected)
         expected.active_player_id = "B"
         for unit in expected.units.values():
             if unit.owner_id == "B":

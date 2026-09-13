@@ -12,6 +12,8 @@ from aig.ai.simulate import simulate
 from aig.ai.strategy import (
     ExpansionPriority, HeuristicStrategyProvider, Posture, StrategicPlan, StrategicStateBuilder,
 )
+from aig.knowledge import update_knowledge, visible_positions
+from aig.ai.knowledge_planning import planning_view
 from aig.cities import can_found_city_at
 from aig.combat import preview_attack
 from aig.commands import (
@@ -58,7 +60,7 @@ class StrategicStateTests(unittest.TestCase):
         city(self.state)
         city(self.state, "B", 7, 5)
         unit(self.state)
-        unit(self.state, UnitType.SETTLER)
+        unit(self.state, UnitType.SETTLER, x=5, y=3)
         unit(self.state, UnitType.ARCHER, "B", 7, 5, 50)
 
     def test_own_and_enemy_entities_are_compressed_and_sorted(self):
@@ -87,7 +89,7 @@ class StrategicStateTests(unittest.TestCase):
     def test_view_is_detached_and_contains_only_json_primitives(self):
         view = StrategicStateBuilder().build(self.state, "A")
         def check(value):
-            self.assertIn(type(value), (dict, list, str, int, type(None)))
+            self.assertIn(type(value), (dict, list, str, int, bool, type(None)))
             if type(value) is dict:
                 for key, child in value.items():
                     self.assertIs(type(key), str)
@@ -164,6 +166,7 @@ class StrategyTests(unittest.TestCase):
         city(state, "B", 1, 4, "z-city")
         city(state, "B", 4, 1, "a-city")
         city(state, "B", 8, 5, "far-city")
+        unit(state, UnitType.SCOUT)
         chosen = plan(state)
         self.assertEqual((chosen.posture, chosen.primary_enemy_id, chosen.target_city_id),
                          (Posture.ATTACK, "B", "a-city"))
@@ -185,7 +188,7 @@ class StrategyTests(unittest.TestCase):
         unit(state)
         for _ in range(6):
             unit(state, owner="B", x=7, y=5)
-        self.assertEqual(plan(state).posture, Posture.ATTACK)
+        self.assertEqual(plan(state).posture, Posture.EXPAND)
 
     def test_plans_are_deterministic(self):
         state = world()
@@ -200,6 +203,7 @@ class PlanReuseTests(unittest.TestCase):
     def setUp(self):
         self.state = world()
         city(self.state, "B", 7, 5)
+        unit(self.state, x=5, y=3)
         self.provider = Mock(wraps=HeuristicStrategyProvider())
         self.controller = AiController(self.provider, replan_interval=5)
 
@@ -289,19 +293,22 @@ class SettlerExecutorTests(unittest.TestCase):
         # More food to the east overrules the stable western coordinate tie.
         for y in range(1, 6):
             state.tiles[Position(2, y)].terrain = Terrain.HILLS
-        self.assertGreater(AiExecutor._settlement_path(state, settler)[-1].x, 3)
+        self.assertGreater(AiExecutor._settlement_path(planning_view(state, "A"), settler)[-1].x, 3)
         # Plains and forest have equal food; forest offers more production.
         for tile in state.tiles.values():
             tile.terrain = Terrain.PLAINS
         for y in range(1, 6):
             state.tiles[Position(6, y)].terrain = Terrain.FOREST
-        self.assertEqual(AiExecutor._settlement_path(state, settler)[-1].x, 5)
+        self.assertEqual(AiExecutor._settlement_path(planning_view(state, "A"), settler)[-1].x, 5)
 
     def test_no_legal_site_ends_without_illegal_founding(self):
         state = world()
         unit(state, UnitType.SETTLER)
-        for tile in state.tiles.values():
+        state.players["A"].knowledge.explored_positions.update(state.tiles)
+        for position, tile in state.tiles.items():
             tile.owner_id = "B"
+            if position not in visible_positions(state, "A"):
+                tile.terrain = Terrain.MOUNTAINS
         result = AiExecutor().execute(state, plan(state))
         self.assertFalse(commands(result, FoundCity))
         self.assertFalse(commands(result, MoveUnit))
@@ -386,7 +393,7 @@ class EconomicExecutorTests(unittest.TestCase):
     def test_expansion_builds_one_settler_with_adequate_military(self):
         state = world()
         city(state)
-        unit(state)
+        unit(state, UnitType.SCOUT)
         unit(state)
         result = AiExecutor().execute(state, plan(state))
         self.assertEqual(commands(result, SetCityProduction)[0].unit_type, UnitType.SETTLER)
@@ -406,8 +413,11 @@ class EconomicExecutorTests(unittest.TestCase):
         city(state)
         unit(state)
         unit(state)
-        for tile in state.tiles.values():
+        state.players["A"].knowledge.explored_positions.update(state.tiles)
+        for position, tile in state.tiles.items():
             tile.owner_id = "B"
+            if position not in visible_positions(state, "A"):
+                tile.terrain = Terrain.MOUNTAINS
         result = AiExecutor().execute(state, plan(state))
         self.assertNotEqual(commands(result, SetCityProduction)[0].unit_type, UnitType.SETTLER)
 
@@ -457,25 +467,29 @@ class CombatExecutorTests(unittest.TestCase):
         result = AiExecutor().execute(state, StrategicPlan(Posture.ATTACK))
         self.assertEqual(commands(result, AttackUnit)[0].target_unit_id, chosen.id)
 
-    def test_moves_toward_city_without_entering_it(self):
+    def test_moves_toward_city_and_captures_it(self):
         state = world()
         attacker = unit(state)
         target = city(state, "B", 7, 5)
+        attacker.position = Position(5, 3)
+        update_knowledge(state)
         chosen = StrategicPlan(Posture.ATTACK, "B", target.id)
         moves = []
         for _ in range(9):
             result = AiExecutor().execute(state, chosen)
             moves += commands(result, MoveUnit)
+            if state.result is not None:
+                break
             apply_command(state, EndActivation("B"))
-        self.assertTrue(moves)
-        self.assertTrue(all(c.destination != target.position for c in moves))
-        self.assertEqual(max(abs(attacker.position.x - 7), abs(attacker.position.y - 5)), 1)
-        self.assertFalse(commands(result, MoveUnit))
+        self.assertEqual(attacker.position, target.position)
+        self.assertEqual(target.owner_id, "A")
+        self.assertEqual(state.result.winner_player_id, "A")
+        self.assertIsInstance(result.commands_executed[-1], MoveUnit)
 
     def test_moves_toward_enemy_concentration_without_cities(self):
         state = world()
         unit(state)
-        unit(state, owner="B", x=7, y=5)
+        unit(state, owner="B", x=3, y=3)
         result = AiExecutor().execute(state, StrategicPlan(Posture.ATTACK, "B"))
         self.assertTrue(commands(result, MoveUnit))
 
@@ -571,7 +585,7 @@ class ExecutionBoundaryTests(unittest.TestCase):
         self.assertEqual(data["commands_executed"][-1]["type"], "EndActivation")
         self.assertEqual(data["plan"]["posture"], "expand")
         self.assertNotIn("plan", to_snapshot(state))
-        self.assertEqual(to_snapshot(state)["schema_version"], 8)
+        self.assertEqual(to_snapshot(state)["schema_version"], 12)
 
     def test_human_and_pregame_rejected_by_executor(self):
         state = world()
@@ -587,6 +601,8 @@ class ExecutionBoundaryTests(unittest.TestCase):
         unit(state)
         city(state)
         city(state, "B", 7, 5)
+        state.units["unit-1"].position = Position(5, 3)
+        update_knowledge(state)
         provider = Mock()
         provider.create_plan.return_value = StrategicPlan(Posture.ATTACK, "B", "city-B")
         result = AiOrchestrator(provider).run_active_ai_activation(state)
@@ -665,10 +681,12 @@ class OrchestrationTests(unittest.TestCase):
             first, second = simulate(100), simulate(100)
         self.assertEqual(first, second)
         self.assertEqual(first["snapshot_sha256"],
-                         "002a14bb4681f14c6715173f6f82cf57d95cfd3d14bf9a86dfd693ece21f472e")
+                         "8859a9dbe564c70105c62e9764ef6d857ea22b674049983857f0256ef3f9bb48")
         self.assertEqual(first["trace_sha256"],
-                         "30d0a56152bb4ab1b279c1aaf8c04480f4af8d721d54ce420bfbe12dfe790a42")
-        self.assertEqual((first["turn"], first["activations"]), (100, 200))
+                         "b9f5bc4faf4b13b8aa0262170ec3f7c058dc14b33e2f2bc20758ea98adbb2302")
+        self.assertEqual((first["turn"], first["activations"]), (75, 225))
+        self.assertEqual(first["victory_type"], "conquest")
+        self.assertFalse(first["turn_cap_reached"])
         for kind in ("MoveUnit", "AttackUnit", "FoundCity", "SetResearch", "SetCityProduction"):
             self.assertGreater(first["commands"][kind], 0)
         self.assertGreater(first["cities"], 2)

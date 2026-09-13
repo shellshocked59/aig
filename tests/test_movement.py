@@ -360,8 +360,10 @@ class MovementActivationTests(unittest.TestCase):
                 self.assertIsNone(state.active_player_id)
                 self.assertEqual(state.turn, 0)
                 self.assertTrue(all(u.moves_remaining == 0 for u in state.units.values()))
-                state.eliminate_player(state.turn_order[0])
-                self.assertEqual(state.units, {})
+                before = deepcopy(state)
+                with self.assertRaisesRegex(ValueError, "game has ended"):
+                    state.eliminate_player(state.turn_order[0])
+                self.assertEqual(state, before)
 
     def test_pregame_elimination_does_not_refresh(self):
         state = self.spent_state()

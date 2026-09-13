@@ -212,7 +212,8 @@ class ScienceEconomyTests(unittest.TestCase):
 
     def test_no_cities_still_completes_affordable_research(self):
         state = research_state()
-        state.remove_city("a")
+        del state.cities["a"]
+        state.players["A"].has_ever_owned_city = False
         player = state.players["A"]
         player.science_stored = 15
         player.research_target = Technology.ARCHERY
@@ -269,6 +270,8 @@ class ScienceEconomyTests(unittest.TestCase):
                         FoundCity("A", settler.id, "new", "New"),
                         SetCityProduction("A", "a", UnitType.WARRIOR)):
             apply_command(state, command)
+            for actor in state.players:
+                before[actor].knowledge = deepcopy(state.players[actor].knowledge)
             self.assertEqual(state.players, before)
 
     def test_invalid_end_activation_is_atomic(self):
@@ -304,6 +307,8 @@ class ScienceEconomyTests(unittest.TestCase):
             before = deepcopy(state.players)
             apply_command(state, EliminatePlayer(active, active))
             before[active].eliminated = True
+            for actor in state.players:
+                before[actor].knowledge = deepcopy(state.players[actor].knowledge)
             self.assertEqual(state.players, before)
             self.assertEqual((state.active_player_id, state.turn), (successor, turn))
             self.assertFalse(any(c.owner_id == active for c in state.cities.values()))
@@ -342,9 +347,9 @@ class ResearchSnapshotTests(unittest.TestCase):
         state = research_state()
         state.players["A"].researched_technologies = frozenset(reversed(list(Technology)))
         snapshot = to_snapshot(state)
-        self.assertEqual(snapshot["schema_version"], 8)
-        self.assertEqual(snapshot["players"][0], {
-            "id": "A", "controller": "human", "eliminated": False, "gold": 0,
+        self.assertEqual(snapshot["schema_version"], 12)
+        self.assertEqual({k: v for k, v in snapshot["players"][0].items() if k not in ("knowledge", "kind")}, {
+            "id": "A", "controller": "human", "eliminated": False, "gold": 0, "has_ever_owned_city": True,
             "science_stored": 0, "research_target": None,
             "researched_technologies": ["agriculture", "archery", "bronze_working"],
         })
