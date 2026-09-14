@@ -1,0 +1,22 @@
+{
+  "version": "arena-benchmark-v3",
+  "scope": "eight intended stepwise full-match pilot attempts; Stage A before Stage B",
+  "control_version": "arena-control-stepwise-v1",
+  "prompt": "arena-step-prompt-v1",
+  "observation": "arena-observation-v2",
+  "schema": "arena-turn-plan-schema-v1",
+  "rules": "arena-rules-v2",
+  "scenario": "arena-scenario-v1",
+  "default_turns": 100,
+  "turn_bound": "completed global rounds; at most two player turns each",
+  "heuristic": "unchanged full-turn deterministic reference policy",
+  "request_ceiling_per_model": 400,
+  "request_accounting": "before each transport attempt, including preflight and repair; cumulative across stages and sides",
+  "preflight_requests_per_model": 1,
+  "max_repairs_per_decision": 1,
+  "purity": "strict; no fallback; no experimental retries",
+  "progression": "continue independent matches after ordinary provider failures; disable provider at request ceiling or failed preflight",
+  "integrity": "stop all providers on source mutation, provenance violation, catalog execution defect or replay mismatch",
+  "partial_state": "request ceiling preserves exact prefix without automatic EndTurn",
+  "replay": "complete command trace and detached per-turn model observations, catalogs, AP and heuristic execution"
+}

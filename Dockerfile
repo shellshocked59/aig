@@ -6,7 +6,7 @@ RUN npm ci
 COPY frontend ./frontend
 COPY scripts ./scripts
 EXPOSE 5173
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "dev:frontend"]
 
 FROM web AS frontend-build
 ARG PUBLIC_API_BASE_URL=https://api.agentstrategy.online
@@ -45,4 +45,4 @@ COPY frontend ./frontend
 COPY scripts ./scripts
 EXPOSE 8000
 # Each process owns one in-memory game; never run multiple workers.
-CMD ["python", "-m", "uvicorn", "aig.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["python", "-m", "uvicorn", "aig.web:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

@@ -352,10 +352,17 @@ sampling. The [asset notes](../frontend/src/assets/README.md) record its layout 
 prompt. CSS uses atlas positions and pixelated scaling; esbuild copies the PNG
 under a content-hashed filename. No runtime assets or fonts come from the internet.
 
-`npm run dev` uses esbuild's static server behind a small Node HTTP proxy on
+`npm run dev:frontend` uses esbuild's static server behind a small Node HTTP proxy on
 127.0.0.1:5173: `/api` goes to Python on 127.0.0.1:8000; other paths go to esbuild.
 This is development-only hosting. `npm run build` and `npm run watch` retain their
 existing build roles. Sources watch automatically; browser refresh is manual.
+
+For local Arena preview, `npm run dev` now launches a dedicated Python web host
+on a free loopback port plus that proxy on 5173. `aig.web:create_app` adds static
+pages and browser-only Arena summaries around the frozen API factory. Open
+`http://127.0.0.1:5173/arena`; manual and heuristic modes need no model service.
+The API-only factory and research contracts remain unchanged. See
+[Arena UI Phase 1](arena-ui-phase1.md) for the Windows workflow and verification.
 
 Python unittest API tests use FastAPI's in-process TestClient and HTTPX, including
 real command effects, deterministic/reset behavior, invalid-state atomicity,

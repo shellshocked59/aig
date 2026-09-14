@@ -41,7 +41,7 @@ starts it when Laragon starts. Restart Laragon to load the entry and Apache
 configuration. For manual startup instead, use:
 
 ```powershell
-.venv\Scripts\python.exe -m uvicorn aig.api:create_app --factory --host 127.0.0.1 --port 8000 --workers 1
+.venv\Scripts\python.exe -m uvicorn aig.web:create_app --factory --host 127.0.0.1 --port 8000 --workers 1
 ```
 
 Use only one backend process on port 8000. Restarting it discards the in-memory
@@ -93,6 +93,14 @@ local defaults; there is no AIG
 database to create and adding database variables would not enable persistence.
 
 ## Troubleshooting
+
+- **Arena returns `404 {"detail":"Not Found"}`, but health is OK:** the proxy
+  works but the running backend predates Arena. For Docker, run
+  `docker compose up -d --build --no-deps api` to install current dependencies
+  and recreate only the API. For host Python, update dependencies and restart
+  the process using `aig.web:create_app`. Restarting clears in-memory matches.
+- **`/arena` is 404 on the frontend host:** install the current `aig.conf` and
+  reload Apache. Open **http://aig.localhost/arena** and choose **Human vs Heuristic**.
 
 - **Laragon welcome page:** reload/restart Apache and confirm that `aig.conf` is
   in `sites-enabled` and the URL is `http://aig.localhost`.

@@ -7,11 +7,16 @@ Empire's heuristic/Qwen/Luna experiments remain preserved. Arena includes
 downed units, Finish/Revive, class specials, obstacle LOS, and direct tactical
 turn providers: Heuristic, Ollama/Qwen and OpenAI/Luna (Phase 4).
 
-To play Arena, launch the normal backend/frontend below, choose **Arena Demo**
-beside **Empire Demos**, then create an **Arena Demo**. Select a unit, choose
-an action, and left-click a highlighted destination, impact tile or target. End Turn
-hands control to the other team. Choose **Arena Human vs Heuristic** to face the
-AI, or select **Human vs Qwen**, **Human vs OpenAI (Luna)**, or **Human vs Configured AI**.
+**Play Arena locally:** after the one-time setup under [Running Locally](#running-locally),
+run `npm.cmd run dev` in PowerShell and open **http://127.0.0.1:5173/arena**.
+Choose **Human vs Heuristic** to play Blue, or **Local Match / Manual**
+to control both teams. Select a unit, choose an action, and click a gold target.
+**End Turn** lets the opponent act; **New Match** resets the current mode.
+No model service, API key, Docker, database, or paid request is needed.
+The app shell also has an **Arena** entry. Model modes are tucked
+under **Experimental AI** and require an explicit selection.
+See [Arena UI Phase 1](docs/arena-ui-phase1.md) for controls and verification.
+
 `AIG_ARENA_TURN_PROVIDER` selects the configured Arena opponent independently of
 Empire's `AIG_STRATEGY_PROVIDER`; both default to heuristic. AI turns run after End Turn.
 Model actions are bounded to five AP, with one static-output repair and visible
@@ -123,29 +128,47 @@ python -m venv .venv
 npm.cmd ci
 ```
 
-Terminal 1 — Python backend:
+Start everything with one command:
 
 ```powershell
-.venv\Scripts\python.exe -m uvicorn aig.api:create_app --factory --host 127.0.0.1 --port 8000
-```
-
-Terminal 2 — frontend and API proxy:
-
-```powershell
+cd C:\code\aig
 npm.cmd run dev
 ```
 
-Open **http://127.0.0.1:5173**. Keep both terminals running. Stop with Ctrl+C.
-The development server forwards `/api` to Python on port 8000. Browser requests
-use relative URLs by default, with no CORS setup or external asset downloads.
-`PUBLIC_API_BASE_URL` selects a separate API origin when configured.
+Open **http://127.0.0.1:5173/arena**, then choose **Human vs Heuristic**.
+Keep the terminal running; stop with **Ctrl+C**. The launcher starts its own Python
+backend on a free loopback port, waits for health, and starts the frontend watch
+server on port 5173. Existing Python sessions on port 8000 are left alone.
+Local preview uses its own same-origin API even if `.env` contains deployment
+origins. Frontend edits rebuild automatically; refresh the browser to see them.
+Restart the command after Python edits. Sessions are in memory and local users
+share the same Arena match within one backend process.
+
+If port 5173 is occupied, stop your previous frontend terminal and retry.
+Missing dependencies or startup failures are printed in the terminal. An API
+connection failure is also shown in the game, with **Refresh** available to retry.
+
+For an existing backend or Docker, the original two-process workflow remains:
+
+```powershell
+# Terminal 1
+.venv\Scripts\python.exe -m aig.web
+# Terminal 2
+npm.cmd run dev:frontend
+```
+
+The standalone frontend proxy forwards `/api` to port 8000 by default;
+`API_HOST`/`API_PORT` and `PUBLIC_API_BASE_URL` retain their existing meanings
+in this advanced workflow. After `npm.cmd run build`, FastAPI can also serve
+**http://127.0.0.1:8000/arena** directly. Missing assets return an actionable
+build instruction. `/` opens Arena by default; `/empire` opens Empire directly.
 
 On macOS/Linux, create `.venv` with `python3 -m venv .venv`, then use
 `.venv/bin/python` instead of `.venv\Scripts\python.exe` and `npm` instead of
 `npm.cmd` in the commands above. The `[test]` extra installs HTTPX2 and a compatible Starlette for API tests;
 `pip install -e .` alone installs the runtime application.
 
-`npm run dev` builds and watches JavaScript, CSS, imported PNGs, and HTML. Refresh
+`npm run dev` launches Python and builds/watches JavaScript, CSS, imported PNGs, and HTML. Refresh
 the browser after edits. `npm run build` produces ignored `dist/` output;
 `npm run watch` rebuilds without starting a server. The playable game requires
 HTTP and Python, so opening `dist/index.html` with `file://` is no longer supported.

@@ -151,7 +151,7 @@ test('Arena demo creation renders all tiles, classes, Cores, bonuses, HP and act
   const { root, click } = await setup(t, { overrides: {
     getGame: () => { throw new ApiError('no_game', 'Create demo', 404); },
   } });
-  assert.equal(root.querySelector('[data-arena="demo"]').textContent, 'Arena Demo');
+  assert.equal(root.querySelector('[data-arena="demo"]').textContent, 'Local Match / Manual');
   await click('[data-arena="demo"]');
   assert.equal(root.querySelectorAll('.arena-tile').length, 45);
   assert.equal(root.querySelectorAll('.arena-blocked').length, 4);
@@ -318,7 +318,7 @@ test('untrusted player names are escaped in labels and markup', async (t) => {
   assert.match(root.textContent, /<img src=x/);
 });
 
-test('environment selector keeps independent views and default Empire behavior', async (t) => {
+test('environment selector defaults to Arena and preserves both views when switching', async (t) => {
   const dom = new JSDOM('<main></main>');
   t.after(() => dom.window.close());
   const root = dom.window.document.querySelector('main');
@@ -329,8 +329,12 @@ test('environment selector keeps independent views and default Empire behavior',
   }, { getGame: () => { arenaReads++; return fixture(); } });
   t.after(() => app.destroy());
   await app.empire.whenIdle();
-  assert.equal(root.querySelector('[data-view="arena"]').hidden, true);
-  assert.match(root.textContent, /Arena Demo/);
+  await app.arena.whenIdle();
+  assert.equal(root.querySelector('[data-view="arena"]').hidden, false);
+  assert.equal(root.querySelector('[data-view="empire"]').hidden, true);
+  assert.equal(root.querySelector('[data-environment]').dataset.environment, 'arena');
+  assert.equal(root.querySelector('[data-environment="arena"]').getAttribute('aria-pressed'), 'true');
+  assert.match(root.textContent, /Arena · Play locally/);
   assert.match(root.textContent, /New Demo Game/);
   root.querySelector('[data-environment="arena"]').click();
   await app.arena.whenIdle();
@@ -460,3 +464,77 @@ for (const provider of ['ollama', 'openai']) {
     assert.equal(root.querySelector('[data-arena="end"]').disabled, false);
   });
 }
+
+test('Arena URL opens Arena directly without creating a match or contacting a provider', async (t) => {
+  const dom = new JSDOM('<main></main>', { url: 'http://localhost/arena' });
+  t.after(() => dom.window.close());
+  const root = dom.window.document.querySelector('main');
+  let creates = 0;
+  const app = mountEnvironments(root, { getGame: async () => { throw new ApiError('no_game', '', 404); } }, {
+    getGame: async () => fixture(), createAiDemo: () => { creates++; },
+  });
+  t.after(() => app.destroy());
+  await app.arena.whenIdle();
+  assert.equal(root.querySelector('[data-view="arena"]').hidden, false);
+  assert.equal(root.querySelectorAll('.arena-tile').length, 45);
+  assert.equal(creates, 0);
+  assert.equal(root.querySelector('.arena-experimental').open, false);
+});
+
+test('changing owned selection during Move clears old targets without a command', async (t) => {
+  const { root, click, calls } = await setup(t);
+  await click(tile(1, 1));
+  await click(mode('move'));
+  await click(tile(1, 0));
+  assert.ok(root.querySelector(`${tile(1, 0)}.arena-selected`));
+  assert.equal(root.querySelectorAll('.arena-legal').length, 0);
+  assert.equal(calls.length, 0);
+});
+
+for (const action of ['attack', 'heal', 'revive']) {
+  test(`${action} highlights exactly the backend targets with accessible labels`, async (t) => {
+    const state = fixture();
+    state.units[3].actions[action] = [action === 'attack' ? 'red-knight' : 'blue-knight'];
+    const { root, click } = await setup(t, { state });
+    await click(tile(1, 4));
+    await click(mode(action));
+    const targets = [...root.querySelectorAll('.arena-legal')];
+    assert.equal(targets.length, 1);
+    assert.match(targets[0].getAttribute('aria-label'), new RegExp(`legal ${action} target`));
+  });
+}
+
+test('New Match preserves heuristic mode after refresh and clears the battle log', async (t) => {
+  const state = { ...fixture(), controllers: { blue: 'human', red: 'heuristic_ai' },
+    battle_log: [{ id: 1, text: 'Blue Team Knight moved to (2, 1)' }] };
+  let provider = 'not called';
+  const { root, click } = await setup(t, { state, overrides: {
+    createAiDemo: async (name) => { provider = name; return { ...state, battle_log: [] }; },
+  } });
+  assert.match(root.querySelector('.arena-mode').textContent, /You are Blue/);
+  assert.match(root.querySelector('.arena-battle-log').textContent, /moved to/);
+  await click('[data-arena="reset"]');
+  assert.equal(provider, undefined);
+  assert.doesNotMatch(root.querySelector('.arena-battle-log').textContent, /moved to/);
+});
+
+test('battle log escapes server text and winner displays reason with a reset', async (t) => {
+  const state = { ...fixture(), winner_player_id: 'blue', terminal_reason: 'Core destroyed',
+    battle_log: [{ id: 1, text: '<img src=x> attacked' }] };
+  const { root, click } = await setup(t, { state, overrides: { createDemo: async () => fixture() } });
+  assert.equal(root.querySelector('img'), null);
+  assert.match(root.querySelector('.arena-winner').textContent, /Core destroyed/);
+  await click('[data-arena="reset"]');
+  assert.equal(root.querySelector('.arena-winner'), null);
+  assert.equal(root.querySelector('[data-arena="end"]').disabled, false);
+});
+
+test('session creation failure is visible and can be retried', async (t) => {
+  const { root, click } = await setup(t, { overrides: {
+    getGame: async () => { throw new ApiError('no_game', '', 404); },
+    createDemo: async () => { throw new Error('Could not create Arena. Retry.'); },
+  } });
+  await click('[data-arena="demo"]');
+  assert.match(root.querySelector('[role="alert"]').textContent, /Could not create Arena/);
+  assert.equal(root.querySelector('[data-arena="demo"]').disabled, false);
+});

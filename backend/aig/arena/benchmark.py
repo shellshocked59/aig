@@ -5,15 +5,18 @@ import json
 from pathlib import Path
 
 from aig.ai.benchmark import write_json
+from aig.arena.ai.repair import REPAIR_V1, REPAIR_VERSIONS
 from aig.arena.ai.contracts import PLAN_SCHEMA_VERSION
 from aig.arena.ai.executor import execute_arena_turn
 from aig.arena.ai.factory import PROVIDER_NAMES, create_arena_turn_provider
-from aig.arena.ai.observation import ArenaObservation, build_observation
-from aig.arena.ai.prompts import PROMPT_VERSION
+from aig.arena.ai.observation import (ArenaObservation, build_observation, OBSERVATION_VERSION,
+                                      resolve_observation_version)
+from aig.arena.ai.prompts import PROMPT_VERSION, resolve_prompt
 from aig.arena.benchmark_metrics import inference_metrics, trial_metrics
 from aig.arena.benchmark_provider import checked_plan
 from aig.arena.benchmark_versions import (BENCHMARK_VERSION, frozen_probe, manifest, probe_set, source_manifest)
 from aig.arena.commands import ArenaFireball, arena_fireball_affected_units
+from aig.arena.prompt_metrics import starting_legality
 from aig.arena.replay import ArenaSimulation, replay, TRACE_VERSION
 from aig.arena.snapshots import canonical_json, digest, to_snapshot
 from aig.arena.state import Bonus, integer
@@ -31,6 +34,8 @@ def read_rows(path):
 def verify_trial(directory):
     """Verify persisted evidence, including every command result and turn AP boundary."""
     try:
+        saved_manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+        observation_version = resolve_observation_version(saved_manifest.get("observationVersion", OBSERVATION_VERSION))
         initial = json.loads((directory / "initial-snapshot.json").read_text(encoding="utf-8"))
         final = json.loads((directory / "final-snapshot.json").read_text(encoding="utf-8"))
         commands = read_rows(directory / "commands.jsonl")
@@ -52,7 +57,7 @@ def verify_trial(directory):
         chosen = ArenaSimulation(from_snapshot(initial))
         observations = read_rows(directory / "observations.jsonl")
         for index, row in enumerate(plans):
-            observation = build_observation(chosen.state)
+            observation = build_observation(chosen.state, version=observation_version)
             if observation.hash != row["observation_hash"] or observation.to_dict() != observations[index]["observation"]:
                 raise ValueError("observation")
             result = execute_arena_turn(chosen.state, ArenaTurnPlan.from_dict(row["plan"]), execute_command=chosen.execute).to_dict()
@@ -80,13 +85,15 @@ def run_trial(*, directory, assignments, providers, experiment, turns, probe=Non
         state = sim.state
         player, turn = state.active_player_id, state.turn
         name = assignments[player]
-        observation = build_observation(state)
+        observation = build_observation(state, version=experiment.get("observationVersion", OBSERVATION_VERSION))
         # This roundtrip regenerates legal actions through authoritative Arena queries.
         ArenaObservation.from_dict(observation.to_dict())
         observations.append(dict(turn=turn, player_id=player, observation_hash=observation.hash,
                                  observation=observation.to_dict()))
         plan, call = checked_plan(providers[name], name, observation)
-        call.update(turn=turn, player_id=player, observation_hash=observation.hash)
+        call.update(turn=turn, player_id=player, observation_hash=observation.hash,
+                    observation_version=observation.version,
+                    prompt_version=experiment["promptVersion"], schema_version=PLAN_SCHEMA_VERSION)
         inference.append(call)
         if plan is None:
             failure = call["error_category"]
@@ -113,13 +120,15 @@ def run_trial(*, directory, assignments, providers, experiment, turns, probe=Non
 
         result = execute_arena_turn(state, plan, execute_command=execute).to_dict()
         result.update(turn=turn, observation_hash=observation.hash, provider_type=name,
-                      prompt_version=PROMPT_VERSION, schema_version=PLAN_SCHEMA_VERSION,
+                      observation_version=observation.version,
+                      prompt_version=experiment["promptVersion"], schema_version=PLAN_SCHEMA_VERSION,
                       model_profile=experiment["providers"][name], ap_planned=plan.ap_cost,
                       static_validation=True, repair_count=call["repair_requests"],
                       inference_index=len(inference) - 1,
                       actions_executed=sum(a["executed"] for a in result["actions_attempted"]),
                       command_start=start, command_end=len(sim.trace()["entries"]),
                       premium_tile_occupancy=occupancy)
+        result["starting_legality"] = starting_legality(observation, plan)
         plans.append(result)
     trace = sim.trace()
     final = to_snapshot(sim.state)
@@ -151,6 +160,7 @@ def run_trial(*, directory, assignments, providers, experiment, turns, probe=Non
                   repairRequests=sum(r["repair_requests"] for r in inference),
                   fallbackCount=sum(r["fallback_used"] for r in inference),
                   metrics=metrics, inference=by_provider, hashes=hashes, verification=verification)
+    result["starting_legality"] = [p["starting_legality"] for p in plans]
     if probe:
         result["probe_outcome"] = dict(action_sequence=plans[0]["plan"]["actions"] if plans else [],
             immediate_victory=sim.state.winner_player_id == sim.initial_snapshot["active_player_id"],
@@ -201,7 +211,23 @@ def render_report(report):
 
 def benchmark(*, output, mode="matches", blue_provider="heuristic", red_provider="heuristic",
               games=4, turns=100, probe="all", probe_trials=4, side_swap=False, preflight_only=False,
-              settings=None, provider_factory=create_arena_turn_provider):
+              settings=None, provider_factory=create_arena_turn_provider, prompt_version=None,
+              observation_version=None, control_mode="full-turn", pricing=None, request_ceiling=None, repair_version=REPAIR_V1):
+    if control_mode == "stepwise":
+        from aig.arena.ai.stepwise import STEP_PROMPT_VERSION, create_arena_step_provider
+        from aig.arena.stepwise_benchmark import benchmark_stepwise
+        if mode != "probes" or side_swap or red_provider != "heuristic":
+            raise ValueError("stepwise benchmark v2 supports probes with --blue-provider only")
+        if prompt_version not in (None, STEP_PROMPT_VERSION) or observation_version not in (None, "arena-observation-v2"):
+            raise ValueError("stepwise requires arena-step-prompt-v1 and arena-observation-v2")
+        return benchmark_stepwise(output=output, blue_provider=blue_provider, probe=probe,
+            probe_trials=probe_trials, settings=settings, preflight_only=preflight_only,
+            provider_factory=create_arena_step_provider if provider_factory is create_arena_turn_provider else provider_factory,
+            pricing=pricing, request_ceiling=request_ceiling, repair_version=repair_version)
+    if control_mode != "full-turn" or pricing is not None or request_ceiling is not None or repair_version != REPAIR_V1:
+        raise ValueError("invalid full-turn control options")
+    prompt_version, _ = resolve_prompt(prompt_version)
+    observation_version = resolve_observation_version(observation_version)
     if mode not in ("matches", "probes", "all") or any(n not in PROVIDER_NAMES for n in (blue_provider, red_provider)):
         raise ValueError("invalid benchmark mode/provider")
     for value, name in ((games, "games"), (turns, "turns"), (probe_trials, "probe_trials")):
@@ -215,7 +241,8 @@ def benchmark(*, output, mode="matches", blue_provider="heuristic", red_provider
     output.mkdir(parents=True, exist_ok=True)
     settings = settings if settings is not None else Settings()
     names = sorted(set((blue_provider, red_provider) if mode != "probes" else (blue_provider,)))
-    experiment = manifest(names, settings, source_manifest())
+    experiment = manifest(names, settings, source_manifest(), prompt_version=prompt_version,
+                          observation_version=observation_version)
     report = dict(benchmarkVersion=BENCHMARK_VERSION, experiment=experiment, mode=mode,
                   strictProvider=True, games=games, sideSwap=side_swap, probeTrials=probe_trials,
                   plannedMatchTrials=games * (2 if side_swap else 1) if mode != "probes" else 0,
@@ -224,21 +251,30 @@ def benchmark(*, output, mode="matches", blue_provider="heuristic", red_provider
     providers = {}
     for name in names:
         try:
-            provider = provider_factory(settings, name)
+            # Preserve the existing V1 injected-factory interface. Overrides must
+            # be supported at construction; never mutate a provider's prompt.
+            provider = (provider_factory(settings, name, prompt_version=prompt_version)
+                        if prompt_version != PROMPT_VERSION and name != "heuristic"
+                        else provider_factory(settings, name))
             providers[name] = provider
             # Assert settings identity for injected providers that expose configuration.
             if hasattr(provider, "configuration") and provider.configuration() != experiment["providers"][name]["modelConfiguration"]:
                 raise ValueError("configuration mismatch")
-            for attribute, expected in (("prompt_version", PROMPT_VERSION), ("schema_version", PLAN_SCHEMA_VERSION)):
+            if name != "heuristic" and prompt_version != PROMPT_VERSION and not hasattr(provider, "prompt_version"):
+                raise ValueError("provider must expose its selected prompt version")
+            for attribute, expected in (("prompt_version", prompt_version), ("schema_version", PLAN_SCHEMA_VERSION)):
                 if hasattr(provider, attribute) and getattr(provider, attribute) != expected:
                     raise ValueError("provider contract version mismatch")
             if name == "heuristic":
                 continue
-            _, check = checked_plan(provider, name, build_observation(ArenaSimulation().state), preflight=True)
+            _, check = checked_plan(provider, name, build_observation(ArenaSimulation().state,
+                                   version=observation_version), preflight=True)
         except Exception:
             check = dict(requested_provider=name, actual_provider=None, success=False,
                          error_category="configuration_failure", wall_clock_seconds=0,
                          provider_requests=0, repair_requests=0, fallback_used=False, attempts=[])
+        check.update(prompt_version=prompt_version, observation_version=observation_version,
+                     schema_version=PLAN_SCHEMA_VERSION)
         report["preflight"].append(check)
         if not check["success"]:
             report["status"] = "preflight_failed"
@@ -289,6 +325,14 @@ def main(argv=None, *, provider_factory=create_arena_turn_provider):
     parser.add_argument("--turns", type=int, default=100, help="completed global rounds, at most two player turns each")
     parser.add_argument("--probe", choices=("all", *probe_set()["probes"]), default="all")
     parser.add_argument("--probe-trials", type=int, default=4)
+    parser.add_argument("--control-mode", choices=("full-turn", "stepwise"), default="full-turn")
+    parser.add_argument("--repair-version", choices=REPAIR_VERSIONS, default=REPAIR_V1)
+    parser.add_argument("--pricing", type=Path, help="stepwise only: explicit dated USD/million token pricing JSON")
+    parser.add_argument("--request-ceiling", type=int, help="stepwise only: reject schedules exceeding this total bound")
+    parser.add_argument("--prompt-version", default=None,
+                        help="Arena prompt registry version; default arena-turn-prompt-v1")
+    parser.add_argument("--observation-version", default=None,
+                        help="Arena observation contract; default arena-observation-v1")
     parser.add_argument("--side-swap", action="store_true")
     parser.add_argument("--strict-provider", action="store_true", default=True, help="always enforced; no fallback mode")
     parser.add_argument("--preflight-only", action="store_true")
@@ -305,6 +349,8 @@ def main(argv=None, *, provider_factory=create_arena_turn_provider):
         len({args.blue_provider, args.red_provider}) if args.mode == "all" else 1) if args.mode != "matches" else 0
     print(f"Requested: {0 if args.preflight_only else match_count} matches, {0 if args.preflight_only else probe_count} probes; strict provider purity.")
     try:
+        if args.pricing is not None:
+            args.pricing = json.loads(args.pricing.read_text(encoding="utf-8"))
         result = benchmark(**vars(args), settings=load_settings(), provider_factory=provider_factory)
     except ValueError as error:
         parser.error(str(error))

@@ -1,0 +1,20 @@
+{
+  "version": "arena-benchmark-v2",
+  "control_mode": "stepwise",
+  "control_version": "arena-control-stepwise-v1",
+  "prompt": "arena-step-prompt-v1",
+  "observation": "arena-observation-v2",
+  "schema": "arena-turn-plan-schema-v1",
+  "probe_set": "arena-probes-v1",
+  "rules": "arena-rules-v2",
+  "scenario": "arena-scenario-v1",
+  "scope": "rest of one player turn from a frozen probe state",
+  "max_decisions_per_turn": 5,
+  "max_repairs_per_decision": 1,
+  "preflight_requests_per_model": 1,
+  "purity": "strict; no fallback; abort schedule on first failed turn",
+  "execution_failure": "catalog_execution_defect; preserve prefix and stop",
+  "replay": "executed commands only; independently verify per-step observations and AP",
+  "reporting": "per-decision and whole-turn latency, tokens, cost; preflight separate",
+  "pricing": "optional explicit dated USD rates per million tokens; missing usage/cost remains null"
+}

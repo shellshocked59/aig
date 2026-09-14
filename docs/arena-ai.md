@@ -58,6 +58,17 @@ Legal options describe the observation's initial state only. Enemy/downed units
 have empty legal options. Earlier planned actions can change later legality.
 There are no threat scores, preferred actions or reasoning fields in observations.
 
+Experimental `arena-observation-v2` is selected with
+`build_observation(state, version="arena-observation-v2")`. It replaces per-unit
+option wrappers with flat, complete schema-v1 actions carrying `unit_id`, shares
+class stats/ranges, and uses readable blocked/premium tile coordinate arrays.
+The representation preserves all V1 facts; internal validation/simulation expands
+them losslessly. Both model providers serialize either selected observation and
+record its version. Normal gameplay and default/latest remain Observation V1.
+See [the Phase 7A experiment](arena-observation-v2-experiment.md) for exact shapes,
+measurements and the frozen Prompt V2 wording limitation. No prompt, plan schema,
+repair behavior or sequential execution change accompanies this option.
+
 `ArenaTurnPlan` is a frozen dataclass with `schema_version` and an immutable
 `actions` tuple. The wire format is:
 
@@ -239,6 +250,18 @@ models. There is no previous plan, conversation ID or tactical heuristic beneath
 a model. One provider invocation occurs per turn; a successful first response uses
 one inference request, and static-invalid output may use one additional repair.
 
+Phase 6B adds the explicitly selectable `arena-turn-prompt-v2` experiment. Both
+model constructors and `create_arena_turn_provider` accept `prompt_version=...`;
+the shared registry resolves it once before requests. Omission and `latest` still
+resolve to V1, including normal configured gameplay. V2 clarifies the actor's
+legal-action group, first-action membership, starting versus sequential legality,
+target states, and useful continuation within the AP budget. It retains factual
+costs and rules without adding tactical priorities. The observation, logical and
+wire schemas, profiles, repair feedback and executor are unchanged. Repair calls
+reuse the selected base prompt through the existing mechanics. See the
+[controlled V2 experiment](arena-prompt-v2-experiment.md) for the frozen wording
+hash, offline verification, and separately authorized probe commands.
+
 Ollama posts canonical compact UTF-8 JSON to the configured `/api/chat` with:
 
 - `model`, `keep_alive`, `stream=false`, `think=false`;
@@ -371,3 +394,35 @@ Frozen output limits remain 256 (Qwen) and 512 (Luna). Offline serialized-size
 checks do not prove tokenizer-specific fit, model compliance or server schema
 acceptance; those remain explicit live-smoke checks before Phase 5. No profiles
 were increased or tuned to address hypothetical failures.
+
+## Experimental stepwise control (Phase 7B)
+
+`ArenaStepProvider.create_step` selects zero or one action using unchanged plan
+schema v1. `actions=[]` explicitly ends the turn. `ArenaStepController` executes
+one command, rebuilds Observation V2, and requests another decision if AP remains.
+Every selected action must exactly match the current catalog; model output with
+multiple actions is static-invalid and permits only the existing single repair.
+Terminal states stop immediately. Five decisions per turn is the safety bound.
+
+Ollama and OpenAI step adapters reuse transport/telemetry/repair infrastructure with
+the separate frozen `arena-step-prompt-v1` contract. Full-turn controller, executor,
+heuristic, prompts and normal browser defaults remain unchanged. The experimental
+controller is strict and has no fallback. Benchmark v2 currently exposes probes
+only, through explicit `--control-mode stepwise --mode probes`.
+
+See [Phase 7B architecture, offline evidence and proposed live commands](arena-stepwise-control-experiment.md).
+No live inference was performed during this implementation.
+
+## Phase 8A repair experiment preparation
+
+The separately versioned `arena-step-repair-v2` adds factual rejected-decision diagnostics. Normal stepwise defaults remain `arena-step-repair-v1`; historical manifests without `repairVersion` mean V1. The dedicated `python -m aig.arena.repair_benchmark` measures one repair inference per fixed invalid response using `arena-repair-challenges-v1`, not tactical gameplay or first-response validity. No live A/B has been run. See [repair V2 experiment preparation](arena-repair-v2-experiment.md) for safe evidence capture, offline tests, provenance, request ceilings, and the prepared Qwen commands awaiting authorization.
+
+## Experimental action-ID stepwise control
+
+Phase 9A adds an explicit, separate action-ID selection contract with Observation V3, Step Prompt V2, nullable action_id schema, and one bounded action-ID repair. Structured stepwise, full-turn and gameplay defaults remain unchanged. See [the action-ID experiment](arena-action-id-control-experiment.md) for architecture, offline evidence and the unexecuted Qwen pilot.
+
+Phase 10A adds opt-in constrained structured providers with unchanged Observation V2,
+Step Prompt V1, logical plan V1 and Repair V1. Exact current-action wire schemas
+are separately versioned; defaults remain unchanged. The offline Qwen context
+preparation gate is RED, so no live pilot command is prepared. See
+[the constrained structured experiment](arena-constrained-structured-experiment.md).

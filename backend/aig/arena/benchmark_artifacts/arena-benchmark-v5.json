@@ -1,0 +1,26 @@
+{
+  "version": "arena-benchmark-v5",
+  "scope": "experimental exact constrained structured stepwise probes",
+  "control_version": "arena-control-stepwise-constrained-structured-v1",
+  "prompt": "arena-step-prompt-v1",
+  "observation": "arena-observation-v2",
+  "schema": "arena-turn-plan-schema-v1",
+  "wire_schema": "arena-step-legal-action-wire-schema-v1",
+  "repair": "arena-step-repair-v1",
+  "probes": "arena-probes-v1",
+  "rules": "arena-rules-v2",
+  "scenario": "arena-scenario-v1",
+  "model_profiles": [
+    "qwen-config-v1",
+    "luna-config-v1"
+  ],
+  "max_decisions_per_turn": 5,
+  "max_repairs_per_decision": 1,
+  "preflight_requests": 0,
+  "pilot_trials_per_probe": 1,
+  "pilot_request_ceiling": 70,
+  "ordering": "Canonical legal-action order; EndTurn is the unique empty array, conceptually first",
+  "failure_policy": "Frozen structured stepwise failure policy; no tactical fallback",
+  "promotion": false,
+  "live_gate": "Requires separately reviewed context/support evidence and explicit authorization"
+}

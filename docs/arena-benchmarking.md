@@ -26,6 +26,15 @@ error. `--mode all` runs matches and then every selected probe for each distinct
 selected provider. `--probe` accepts `all` or a fixture name below. Programmatic
 `benchmark(..., provider_factory=...)` supports offline fake providers for tests.
 
+`--prompt-version arena-turn-prompt-v1` explicitly reproduces the established
+prompt; `--prompt-version arena-turn-prompt-v2` selects the Phase 6B prompt-only
+experiment. Omission, `latest`, and `v1` resolve to concrete V1; `v2` resolves to
+concrete V2. Unknown versions fail before provider construction or output creation.
+Injected model factories for V2 must accept the `prompt_version` keyword and
+expose the same concrete version; a mismatch fails before any request.
+The [V2 experiment design](arena-prompt-v2-experiment.md) specifies the next
+probe-only run and its stop point. Normal gameplay defaults remain V1.
+
 ## Match methodology and side swaps
 
 Every match constructs the canonical Arena scenario anew and records the exact
@@ -178,7 +187,7 @@ Probe and match inference distributions should be interpreted separately.
 ## Provenance, files, hashes and replay
 
 Every run manifest records `arena-benchmark-v1`, `arena-probes-v1`,
-`arena-rules-v2`, `arena-scenario-v1`, `arena-turn-prompt-v1`,
+`arena-rules-v2`, `arena-scenario-v1`, the concrete selected prompt version,
 `arena-turn-plan-schema-v1`, provider/model/profile and local Git revision/dirty
 status. A hash inventory of backend Python and JSON source captures uncommitted
 source independently of Git. No GitHub operation is needed. Saved versions never
@@ -186,6 +195,37 @@ say `latest`. Baseline model settings identify `qwen-config-v1` / `luna-config-v
 runtime overrides get a concrete content-derived configuration ID plus exact
 allowlisted inference settings. API keys and credential-bearing settings are
 excluded. The source manifest hashes file contents; it does not embed them.
+
+The immutable `arena-benchmark-v1.json` still names the V1 prompt. New manifests
+keep that methodology/spec hash and distinguish the base recipe using
+`baseRecipePromptVersion`, actual `promptVersion`/`promptHash`, and
+`experimentOverrides` (`{"promptVersion":"arena-turn-prompt-v2"}` for V2,
+empty for V1). This identifies a prompt override of the frozen recipe, not an
+unchanged execution of that recipe. No `arena-benchmark-v2` is introduced.
+Plan rows, inference rows and preflight diagnostics carry concrete prompt/schema
+versions. Historical files are never updated or made dependent on `latest`.
+
+Observation-only experiments add `--observation-version arena-observation-v2`,
+used alongside `--prompt-version arena-turn-prompt-v2`. The observation override
+applies to the built-in preflight and every trial; omitted/default/latest remains
+`arena-observation-v1`. New manifests also record `observationVersion` and
+`baseRecipeObservationVersion`, with `experimentOverrides.observationVersion`
+when V2 is selected. Plan/inference/preflight rows carry `observation_version`.
+The immutable recipe and probe artifacts retain their V1 observation hashes;
+selected V2 observations have their own hashes. Historical manifests without the
+field are interpreted as V1 during replay, never as latest. See the
+[Phase 7A report](arena-observation-v2-experiment.md) for offline measurements,
+future A/B metrics, exact unexecuted commands and request ceilings.
+
+New plan rows also include passive `starting_legality` measurements, repeated in
+trial results: `first_action_starting_legal` (null for an empty plan),
+`starting_legal_prefix_length`, and `starting_action_membership`. Membership uses
+the exact actor, action type and target/destination from the starting observation.
+It does not simulate, reject or alter a plan. A later starting-legal action may
+fail during execution; a newly legal action can be absent from the starting list.
+These measurements are separate from the frozen Phase 5 metrics and behavioral
+hashes. They can also be recomputed for historical accepted plans with
+`aig.arena.prompt_metrics.starting_legality` without rewriting V1 evidence.
 
 ```text
 summary.json
@@ -237,38 +277,83 @@ trial planning calls plus preflight and possible repairs.
 Qwen preflight only (one request, zero trials):
 
 ```powershell
-.venv/Scripts/python.exe -m aig.arena.benchmark --blue-provider ollama --red-provider ollama --preflight-only --output .local/arena-qwen-preflight
+.venv/Scripts/python.exe -m aig.arena.benchmark --blue-provider ollama --red-provider ollama --prompt-version arena-turn-prompt-v1 --preflight-only --output .local/arena-qwen-preflight
 ```
 
 Luna preflight only (one request, zero trials):
 
 ```powershell
-.venv/Scripts/python.exe -m aig.arena.benchmark --blue-provider openai --red-provider openai --preflight-only --output .local/arena-luna-preflight
+.venv/Scripts/python.exe -m aig.arena.benchmark --blue-provider openai --red-provider openai --prompt-version arena-turn-prompt-v1 --preflight-only --output .local/arena-luna-preflight
 ```
 
 Qwen full-match baseline:
 
 ```powershell
-.venv/Scripts/python.exe -m aig.arena.benchmark --mode matches --blue-provider ollama --red-provider ollama --games 4 --turns 100 --output .local/arena-qwen-matches
+.venv/Scripts/python.exe -m aig.arena.benchmark --mode matches --blue-provider ollama --red-provider ollama --prompt-version arena-turn-prompt-v1 --games 4 --turns 100 --output .local/arena-qwen-matches
 ```
 
 Luna full-match baseline:
 
 ```powershell
-.venv/Scripts/python.exe -m aig.arena.benchmark --mode matches --blue-provider openai --red-provider openai --games 4 --turns 100 --output .local/arena-luna-matches
+.venv/Scripts/python.exe -m aig.arena.benchmark --mode matches --blue-provider openai --red-provider openai --prompt-version arena-turn-prompt-v1 --games 4 --turns 100 --output .local/arena-luna-matches
 ```
 
 Qwen tactical probe baseline:
 
 ```powershell
-.venv/Scripts/python.exe -m aig.arena.benchmark --mode probes --blue-provider ollama --probe all --probe-trials 4 --output .local/arena-qwen-probes
+.venv/Scripts/python.exe -m aig.arena.benchmark --mode probes --blue-provider ollama --prompt-version arena-turn-prompt-v1 --probe all --probe-trials 4 --output .local/arena-qwen-probes
 ```
 
 Luna tactical probe baseline:
 
 ```powershell
-.venv/Scripts/python.exe -m aig.arena.benchmark --mode probes --blue-provider openai --probe all --probe-trials 4 --output .local/arena-luna-probes
+.venv/Scripts/python.exe -m aig.arena.benchmark --mode probes --blue-provider openai --prompt-version arena-turn-prompt-v1 --probe all --probe-trials 4 --output .local/arena-luna-probes
 ```
 
 Later head-to-head comparisons can use `--blue-provider ollama --red-provider
 openai --side-swap`. No live baseline or tuning is part of Phase 5 implementation.
+
+## Stepwise benchmark v2 (Phase 7B)
+
+Full-turn experiments remain `arena-benchmark-v1`. Explicit
+`--control-mode stepwise --mode probes` selects `arena-benchmark-v2`,
+`arena-control-stepwise-v1`, `arena-step-prompt-v1`, Observation V2 and the unchanged
+plan schema/probes/model profiles. V2 currently supports probes only; it controls
+the remainder of one player turn, rebuilding observations after each action.
+New manifests record control mode/version. Historical files are not rewritten.
+
+Offline reference command (no external inference):
+
+```powershell
+.venv/Scripts/python.exe -m aig.arena.benchmark --control-mode stepwise --mode probes --blue-provider heuristic --probe all --probe-trials 1 --output .local/arena-stepwise-offline-reference
+```
+
+V2 stores per-decision observations, accepted decisions, current legality, AP,
+telemetry, repairs and state hashes in each `turn.json`. Command-only replay and
+independent step-boundary verification remain authoritative. Failed turns stop the
+schedule and remain in reliability denominators, without heuristic fallback.
+Catalog-member execution failures are harness/domain defects, not model sequencing.
+
+Compare total latency/tokens/cost per player turn as well as per decision. Explicit
+dated `--pricing` JSON enables Luna cost estimates; missing pricing/usage remains
+null. `--request-ceiling` rejects schedules above the supplied theoretical bound
+before provider construction. Seven probes at one trial require at most 71 requests
+per model including preflight/repairs; four trials require at most 281.
+
+See [Phase 7B experiment](arena-stepwise-control-experiment.md) for exact proposed
+commands, reference results, pricing format and the live authorization stop point.
+
+## Phase 8A repair experiment preparation
+
+The separately versioned `arena-step-repair-v2` adds factual rejected-decision diagnostics. Normal stepwise defaults remain `arena-step-repair-v1`; historical manifests without `repairVersion` mean V1. The dedicated `python -m aig.arena.repair_benchmark` measures one repair inference per fixed invalid response using `arena-repair-challenges-v1`, not tactical gameplay or first-response validity. No live A/B has been run. See [repair V2 experiment preparation](arena-repair-v2-experiment.md) for safe evidence capture, offline tests, provenance, request ceilings, and the prepared Qwen commands awaiting authorization.
+
+## Experimental action-ID probes
+
+The separate aig.arena.action_id_benchmark entry point uses arena-benchmark-v4, because arena-benchmark-v3 already identifies the frozen structured full-match orchestrator. It keeps arena-probes-v1 and model profiles unchanged, has no preflight or full-match mode, and enforces per-attempt request accounting. See [Phase 9A](arena-action-id-control-experiment.md) for offline replay results and the prepared seven-turn, 70-request Qwen pilot. Live execution requires separate authorization.
+
+Phase 10A freezes `arena-benchmark-v5` for exact constrained structured control.
+Its executable preparation entry point is the offline-only
+`python -m aig.arena.constrained_study --output NEW_DIRECTORY`. V1–V4 remain
+unchanged. The Qwen context preparation gate is RED; no live runner or command is
+prepared. See [Phase 10A](arena-constrained-structured-experiment.md) for exactness
+proofs, fake-adapter support, request sizes and the inactive future pilot bound.

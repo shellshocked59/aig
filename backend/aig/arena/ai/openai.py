@@ -4,15 +4,17 @@ from openai import OpenAI, APIError
 
 from aig.ai.openai import api_failure_category, usage_metrics
 from aig.arena.ai.provider import ModelArenaTurnProvider
-from aig.arena.ai.prompts import SYSTEM_PROMPT
+from aig.arena.ai.prompts import PROMPT_VERSION
 from aig.arena.ai.validation import ArenaProviderError, openai_turn_plan_schema
 
 
 class OpenAIArenaTurnProvider(ModelArenaTurnProvider):
     name = "openai"
+    output_schema = staticmethod(openai_turn_plan_schema)
+    output_schema_name = "arena_turn_plan"
 
-    def __init__(self, settings, *, client=None, repair=True, secrets=()):
-        super().__init__(settings, repair=repair, secrets=(*secrets, settings.api_key))
+    def __init__(self, settings, *, client=None, repair=True, secrets=(), prompt_version=PROMPT_VERSION):
+        super().__init__(settings, repair=repair, secrets=(*secrets, settings.api_key), prompt_version=prompt_version)
         # Missing credentials fail on the turn boundary, where normal fallback lives.
         self._client = client
         if client is None and settings.api_key:
@@ -27,11 +29,11 @@ class OpenAIArenaTurnProvider(ModelArenaTurnProvider):
             raise ArenaProviderError("authentication_failure")
         try:
             response = self._client.responses.create(
-                model=self.settings.model, instructions=SYSTEM_PROMPT, input=messages,
+                model=self.settings.model, instructions=self.system_prompt, input=messages,
                 reasoning={"effort": self.settings.reasoning_effort},
                 max_output_tokens=self.settings.max_output_tokens, store=False,
-                text={"format": dict(type="json_schema", name="arena_turn_plan", strict=True,
-                                     schema=openai_turn_plan_schema())})
+                text={"format": dict(type="json_schema", name=self.output_schema_name, strict=True,
+                                     schema=self.output_schema())})
         except APIError as error:
             request_id = getattr(error, "request_id", None)
             if isinstance(request_id, str):

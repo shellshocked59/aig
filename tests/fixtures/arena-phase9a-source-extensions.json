@@ -1,0 +1,52 @@
+{
+  "backend/aig/arena/ai/ollama.py": [
+    [
+      "    output_schema = staticmethod(turn_plan_schema)\n",
+      ""
+    ],
+    [
+      "format=self.output_schema()",
+      "format=turn_plan_schema()"
+    ]
+  ],
+  "backend/aig/arena/ai/openai.py": [
+    [
+      "    output_schema = staticmethod(openai_turn_plan_schema)\n    output_schema_name = \"arena_turn_plan\"\n",
+      ""
+    ],
+    [
+      "name=self.output_schema_name",
+      "name=\"arena_turn_plan\""
+    ],
+    [
+      "schema=self.output_schema()",
+      "schema=openai_turn_plan_schema()"
+    ]
+  ],
+  "backend/aig/arena/ai/observation.py": [
+    [
+      "OBSERVATION_V3 = \"arena-observation-v3\"\n",
+      ""
+    ],
+    [
+      "OBSERVATIONS = MappingProxyType({OBSERVATION_VERSION: \"actor-grouped\", OBSERVATION_V2: \"action-explicit\",\n                               OBSERVATION_V3: \"action-id\"})",
+      "OBSERVATIONS = MappingProxyType({OBSERVATION_VERSION: \"actor-grouped\", OBSERVATION_V2: \"action-explicit\"})"
+    ],
+    [
+      "    if version in (OBSERVATION_V2, OBSERVATION_V3):",
+      "    if version == OBSERVATION_V2:"
+    ],
+    [
+      "    if version == OBSERVATION_V3:\n        data[\"schema_version\"] = OBSERVATION_V3\n        data[\"legal_actions\"] = action_id_catalog(data[\"legal_actions\"])\n",
+      ""
+    ],
+    [
+      "\n\ndef action_id_catalog(actions):\n    \"\"\"Wrap V2 order unchanged. Width expands with catalog size; no namespace cap.\"\"\"\n    width = max(2, len(str(len(actions))))\n    return [dict(id=f\"A{index:0{width}d}\", action=action) for index, action in enumerate(actions, 1)]\n",
+      ""
+    ],
+    [
+      "    if data[\"schema_version\"] == OBSERVATION_V3:\n        data[\"legal_actions\"] = [entry[\"action\"] for entry in data[\"legal_actions\"]]\n",
+      ""
+    ]
+  ]
+}

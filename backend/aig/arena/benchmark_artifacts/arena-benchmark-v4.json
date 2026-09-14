@@ -1,0 +1,25 @@
+{
+  "version": "arena-benchmark-v4",
+  "scope": "experimental action-ID stepwise tactical probes",
+  "control_version": "arena-control-stepwise-action-id-v1",
+  "prompt": "arena-step-prompt-v2",
+  "observation": "arena-observation-v3",
+  "schema": "arena-step-action-id-schema-v1",
+  "repair": "arena-action-id-repair-v1",
+  "probes": "arena-probes-v1",
+  "rules": "arena-rules-v2",
+  "scenario": "arena-scenario-v1",
+  "model_profiles": [
+    "qwen-config-v1",
+    "luna-config-v1"
+  ],
+  "max_decisions_per_turn": 5,
+  "max_repairs_per_decision": 1,
+  "preflight_requests": 0,
+  "pilot_trials_per_probe": 1,
+  "pilot_request_ceiling": 70,
+  "ordering": "Observation V2 action_order unchanged",
+  "action_id_format": "A + sequential index padded to max(2, digits(catalog size))",
+  "catalog_hash": "SHA256 canonical ordered [[id, complete_action], ...]",
+  "failure_policy": "stop and preserve exact prefix; no fallback or EndTurn-on-failure"
+}

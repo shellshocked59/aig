@@ -65,7 +65,7 @@ if (watching) {
       const port = isApi ? apiPort : staticServer.port;
       const proxy = request({
         hostname, port,
-        path: incoming.url, method: incoming.method,
+        path: ['/arena', '/arena/', '/empire', '/empire/'].includes(pathname) ? '/' : incoming.url, method: incoming.method,
         headers: { ...incoming.headers, host: `${hostname}:${port}` },
       }, (response) => {
         outgoing.writeHead(response.statusCode, { ...response.headers, 'cache-control': 'no-store' });
@@ -78,7 +78,7 @@ if (watching) {
       });
       incoming.pipe(proxy);
     });
-    server.listen(5173, devHost, () => console.log(`Game listener: ${devHost}:5173 · API proxy: ${apiHost}:${apiPort}`));
+    server.listen(5173, devHost, () => console.log(`Arena ready: http://${devHost}:5173/arena · API proxy: ${apiHost}:${apiPort}`));
     server.on('error', async (error) => { console.error(error.message); await buildContext.dispose(); process.exit(1); });
   }
   console.log('Watching HTML, JavaScript, CSS, and imported sprites. Refresh the browser after changes.');
