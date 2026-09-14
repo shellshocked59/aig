@@ -41,6 +41,7 @@ USER 10001:10001
 FROM python-base AS api
 RUN python -m pip install -e ".[test,infrastructure]"
 COPY tests ./tests
+COPY docs ./docs
 COPY frontend ./frontend
 COPY scripts ./scripts
 EXPOSE 8000

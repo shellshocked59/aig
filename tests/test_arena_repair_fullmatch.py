@@ -51,7 +51,11 @@ class RepairFullMatchTests(unittest.TestCase):
             mock = patch(target, side_effect=AssertionError("network forbidden"))
             mock.start()
             self.addCleanup(mock.stop)
-        self.source = source_manifest()
+        # Offline tests run in images without Git or a .git directory. Supply
+        # only Git metadata; retain real source hashes for the frozen guard.
+        with patch("aig.arena.benchmark_versions.source_provenance",
+                   return_value={"sourceRevision": "a" * 40, "sourceDirty": False}):
+            self.source = source_manifest()
         mock = patch("aig.arena.repair_fullmatch_experiment.source_manifest", return_value=self.source)
         mock.start()
         self.addCleanup(mock.stop)
@@ -84,6 +88,15 @@ class RepairFullMatchTests(unittest.TestCase):
         self.assertEqual(inspect.signature(pilot).parameters["repair_version"].default, REPAIR_V1)
         self.assertEqual(load_plan(self.root/"prep/plan.json", Settings()), plan)
         self.assertFalse((self.root/"v1").exists())
+
+    def test_preparation_rejects_missing_git_provenance(self):
+        for field in ("sourceRevision", "sourceDirty"):
+            with self.subTest(field=field):
+                source = dict(self.source, **{field: None})
+                with patch("aig.arena.repair_fullmatch_experiment.source_manifest", return_value=source):
+                    with self.assertRaisesRegex(ValueError, "Git provenance unavailable"):
+                        self.plan()
+                self.assertFalse((self.root/"prep").exists())
 
     def test_repaired_endturn_and_initial_invalid_retained(self):
         r, m, p = self.one(["{}", EMPTY])
