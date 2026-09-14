@@ -1,0 +1,144 @@
+{
+  "version": "arena-candidate-responses-v1",
+  "fixtures": [
+    {
+      "name": "productive-multi-action",
+      "probe": "finish_or_core",
+      "ap": 5,
+      "step": false,
+      "response": {
+        "schema_version": "arena-turn-plan-schema-v2",
+        "actions": [
+          {
+            "type": "attack",
+            "unit_id": "actor",
+            "target_id": "red-core"
+          },
+          {
+            "type": "move",
+            "unit_id": "actor",
+            "destination": {
+              "x": 6,
+              "y": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "intentional-stop",
+      "probe": "finish_or_core",
+      "ap": 5,
+      "step": false,
+      "response": {
+        "schema_version": "arena-turn-plan-schema-v2",
+        "actions": [
+          {
+            "type": "attack",
+            "unit_id": "actor",
+            "target_id": "red-core"
+          },
+          {
+            "type": "move",
+            "unit_id": "actor",
+            "destination": {
+              "x": 6,
+              "y": 2
+            }
+          },
+          {
+            "type": "end_turn"
+          }
+        ]
+      }
+    },
+    {
+      "name": "full-ap",
+      "probe": "finish_or_core",
+      "ap": 5,
+      "step": false,
+      "response": {
+        "schema_version": "arena-turn-plan-schema-v2",
+        "actions": [
+          {
+            "type": "attack",
+            "unit_id": "actor",
+            "target_id": "red-core"
+          },
+          {
+            "type": "attack",
+            "unit_id": "actor",
+            "target_id": "red-core"
+          },
+          {
+            "type": "attack",
+            "unit_id": "actor",
+            "target_id": "red-core"
+          },
+          {
+            "type": "attack",
+            "unit_id": "actor",
+            "target_id": "red-core"
+          },
+          {
+            "type": "attack",
+            "unit_id": "actor",
+            "target_id": "red-core"
+          },
+          {
+            "type": "end_turn"
+          }
+        ]
+      }
+    },
+    {
+      "name": "partial-ap",
+      "probe": "finish_or_core",
+      "ap": 3,
+      "step": false,
+      "response": {
+        "schema_version": "arena-turn-plan-schema-v2",
+        "actions": [
+          {
+            "type": "attack",
+            "unit_id": "actor",
+            "target_id": "red-core"
+          }
+        ]
+      }
+    },
+    {
+      "name": "bounded-replacement-partial-ap",
+      "probe": "finish_or_core",
+      "ap": 2,
+      "step": false,
+      "response": {
+        "schema_version": "arena-turn-plan-schema-v2",
+        "actions": [
+          {
+            "type": "attack",
+            "unit_id": "actor",
+            "target_id": "red-core"
+          },
+          {
+            "type": "end_turn"
+          }
+        ]
+      }
+    },
+    {
+      "name": "stepwise-end-turn",
+      "probe": "finish_or_core",
+      "ap": 3,
+      "step": true,
+      "response": {
+        "schema_version": "arena-turn-plan-schema-v2",
+        "actions": [
+          {
+            "type": "end_turn"
+          }
+        ]
+      }
+    }
+  ]
+}

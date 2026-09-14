@@ -431,3 +431,7 @@ Step Prompt V1, logical plan V1 and Repair V1. Exact current-action wire schemas
 are separately versioned; defaults remain unchanged. The offline Qwen context
 preparation gate is RED, so no live pilot command is prepared. See
 [the constrained structured experiment](arena-constrained-structured-experiment.md).
+
+## Opt-in adaptive full-turn control
+
+The current gameplay host offers Strict Full Turn (unchanged default), Adaptive (one execution replan), and Stepwise in the collapsed play-mode menu. See [bounded-replan implementation](arena-bounded-replan-implementation.md) for settings, traces, fallback, offline verification, and the frozen prompt caveat. No live validation or default promotion is implied.

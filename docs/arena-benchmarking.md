@@ -357,3 +357,7 @@ Its executable preparation entry point is the offline-only
 unchanged. The Qwen context preparation gate is RED; no live runner or command is
 prepared. See [Phase 10A](arena-constrained-structured-experiment.md) for exactness
 proofs, fake-adapter support, request sizes and the inactive future pilot bound.
+
+## Bounded-replan recipe v6
+
+The additive module aig.arena.bounded_replan_benchmark provides an offline demo, preparation, and explicitly gated live probe runner for strict-versus-bounded control. Previous recipes and runners are unchanged. See [the implementation and proposed commands](arena-bounded-replan-implementation.md) for the four-request smoke and 84-request paired schedule. Both use frozen full-turn prompt/observation V1 and no fallback; no live run has been authorized or performed here.

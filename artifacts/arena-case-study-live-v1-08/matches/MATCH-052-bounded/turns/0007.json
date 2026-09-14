@@ -1,0 +1,1928 @@
+{
+  "ordinal": 7,
+  "turn": {
+    "version": "arena-candidate-turn-trace-v1",
+    "control_mode": "bounded",
+    "control_version": "arena-control-full-turn-bounded-replan-v2",
+    "policy_version": "arena-policy-core-v1",
+    "prompt_version": "arena-turn-prompt-v6",
+    "schema_version": "arena-turn-plan-schema-v2",
+    "observation_version": "arena-observation-v4",
+    "player_id": "blue",
+    "turn": 3,
+    "waves": [
+      {
+        "wave_index": 0,
+        "observation": {
+          "action_costs": {
+            "attack": 1,
+            "end_turn": 0,
+            "finish": 1,
+            "fireball": 2,
+            "heal": 1,
+            "move": 1,
+            "revive": 2,
+            "shield_bash": 1,
+            "snipe": 2
+          },
+          "action_points_remaining": 5,
+          "action_rules": {
+            "fireball": {
+              "base_damage": 4,
+              "damages_cores": false,
+              "friendly_fire": true,
+              "radius": 1
+            },
+            "heal": {
+              "restored_hp": 5
+            },
+            "revive": {
+              "restored_hp": 5
+            },
+            "shield_bash": {
+              "base_damage": 4,
+              "push_tiles": 1
+            },
+            "snipe": {
+              "base_damage": 8
+            }
+          },
+          "active_player_id": "blue",
+          "board": {
+            "blocked_tiles": [
+              {
+                "x": 3,
+                "y": 1
+              },
+              {
+                "x": 5,
+                "y": 1
+              },
+              {
+                "x": 3,
+                "y": 3
+              },
+              {
+                "x": 5,
+                "y": 3
+              }
+            ],
+            "default_tile": {
+              "bonus": null,
+              "terrain": "floor"
+            },
+            "height": 5,
+            "power": [
+              {
+                "x": 4,
+                "y": 0
+              },
+              {
+                "x": 4,
+                "y": 4
+              }
+            ],
+            "siege": [
+              {
+                "x": 3,
+                "y": 2
+              },
+              {
+                "x": 5,
+                "y": 2
+              }
+            ],
+            "ward": [
+              {
+                "x": 2,
+                "y": 2
+              },
+              {
+                "x": 6,
+                "y": 2
+              }
+            ],
+            "width": 9
+          },
+          "bonus_rules": {
+            "minimum_unit_damage": 1,
+            "power_damage": 2,
+            "siege_core_damage": 4,
+            "ward_reduction": 2
+          },
+          "enemy_team": {
+            "core": {
+              "hp": 30,
+              "id": "red-core",
+              "max_hp": 30,
+              "owner_id": "red",
+              "x": 8,
+              "y": 2
+            },
+            "player_id": "red",
+            "units": [
+              {
+                "hp": 9,
+                "id": "red-cleric",
+                "max_hp": 11,
+                "owner_id": "red",
+                "status": "active",
+                "unit_type": "cleric",
+                "x": 7,
+                "y": 2
+              },
+              {
+                "hp": 18,
+                "id": "red-knight",
+                "max_hp": 18,
+                "owner_id": "red",
+                "status": "active",
+                "unit_type": "knight",
+                "x": 7,
+                "y": 1
+              },
+              {
+                "hp": 9,
+                "id": "red-mage",
+                "max_hp": 9,
+                "owner_id": "red",
+                "status": "active",
+                "unit_type": "mage",
+                "x": 4,
+                "y": 4
+              },
+              {
+                "hp": 8,
+                "id": "red-ranger",
+                "max_hp": 10,
+                "owner_id": "red",
+                "status": "active",
+                "unit_type": "ranger",
+                "x": 6,
+                "y": 2
+              }
+            ]
+          },
+          "environment": "arena",
+          "legal_actions": [
+            {
+              "destination": {
+                "x": 1,
+                "y": 2
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 2,
+                "y": 2
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 0,
+                "y": 3
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 1,
+                "y": 3
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 2,
+                "y": 3
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 0,
+                "y": 4
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 2,
+                "y": 4
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 3,
+                "y": 4
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "type": "end_turn"
+            }
+          ],
+          "legal_actions_state": "current_observation",
+          "own_team": {
+            "core": {
+              "hp": 30,
+              "id": "blue-core",
+              "max_hp": 30,
+              "owner_id": "blue",
+              "x": 0,
+              "y": 2
+            },
+            "player_id": "blue",
+            "units": [
+              {
+                "hp": 11,
+                "id": "blue-cleric",
+                "max_hp": 11,
+                "owner_id": "blue",
+                "status": "active",
+                "unit_type": "cleric",
+                "x": 1,
+                "y": 4
+              },
+              {
+                "hp": 0,
+                "id": "blue-mage",
+                "max_hp": 9,
+                "owner_id": "blue",
+                "status": "downed",
+                "unit_type": "mage",
+                "x": 3,
+                "y": 2
+              },
+              {
+                "hp": 0,
+                "id": "blue-ranger",
+                "max_hp": 10,
+                "owner_id": "blue",
+                "status": "downed",
+                "unit_type": "ranger",
+                "x": 4,
+                "y": 0
+              }
+            ]
+          },
+          "players": [
+            {
+              "id": "blue",
+              "name": "Blue Team"
+            },
+            {
+              "id": "red",
+              "name": "Red Team"
+            }
+          ],
+          "rules_version": "arena-rules-v2",
+          "scenario_version": "arena-scenario-v1",
+          "schema_version": "arena-observation-v4",
+          "turn": 3,
+          "unit_types": {
+            "cleric": {
+              "action_ranges": {
+                "attack": 2,
+                "finish": 1,
+                "heal": 2,
+                "move": 2,
+                "revive": 2
+              },
+              "stats": {
+                "attack_range": 2,
+                "damage": 3,
+                "heal_amount": 5,
+                "heal_range": 2,
+                "hp": 11,
+                "move_range": 2
+              }
+            },
+            "knight": {
+              "action_ranges": {
+                "attack": 1,
+                "finish": 1,
+                "move": 2,
+                "shield_bash": 1
+              },
+              "stats": {
+                "attack_range": 1,
+                "damage": 6,
+                "heal_amount": 0,
+                "heal_range": 0,
+                "hp": 18,
+                "move_range": 2
+              }
+            },
+            "mage": {
+              "action_ranges": {
+                "attack": 2,
+                "finish": 1,
+                "fireball": 2,
+                "move": 2
+              },
+              "stats": {
+                "attack_range": 2,
+                "damage": 6,
+                "heal_amount": 0,
+                "heal_range": 0,
+                "hp": 9,
+                "move_range": 2
+              }
+            },
+            "ranger": {
+              "action_ranges": {
+                "attack": 3,
+                "finish": 1,
+                "move": 3,
+                "snipe": 4
+              },
+              "stats": {
+                "attack_range": 3,
+                "damage": 5,
+                "heal_amount": 0,
+                "heal_range": 0,
+                "hp": 10,
+                "move_range": 3
+              }
+            }
+          },
+          "winner_player_id": null
+        },
+        "observation_hash": "a9da2a2895939ac277abb34abb825d650b83cffd021202ed67a4a5ddc3939e6d",
+        "ap_available": 5,
+        "plan": {
+          "schema_version": "arena-turn-plan-schema-v2",
+          "actions": [
+            {
+              "type": "move",
+              "unit_id": "blue-cleric",
+              "destination": {
+                "x": 2,
+                "y": 3
+              }
+            },
+            {
+              "type": "revive",
+              "unit_id": "blue-cleric",
+              "target_id": "blue-mage"
+            },
+            {
+              "type": "end_turn"
+            }
+          ]
+        },
+        "planned_ap": 3,
+        "actions_attempted": [
+          {
+            "index": 0,
+            "action": {
+              "type": "move",
+              "unit_id": "blue-cleric",
+              "destination": {
+                "x": 2,
+                "y": 3
+              }
+            },
+            "ap_before": 5,
+            "ap_after": 4,
+            "executed": true
+          },
+          {
+            "index": 1,
+            "action": {
+              "type": "revive",
+              "unit_id": "blue-cleric",
+              "target_id": "blue-mage"
+            },
+            "ap_before": 4,
+            "ap_after": 4,
+            "executed": false,
+            "error": "blocked line of sight"
+          }
+        ],
+        "commands_executed": [
+          {
+            "schema_version": "arena-command-v2",
+            "type": "arena_move",
+            "actor_id": "blue",
+            "unit_id": "blue-cleric",
+            "destination": {
+              "x": 2,
+              "y": 3
+            }
+          }
+        ],
+        "explicit_end_turn": false,
+        "planned_end_turn": true,
+        "clean_plan_complete": false,
+        "invalid_action": {
+          "index": 1,
+          "action": {
+            "type": "revive",
+            "unit_id": "blue-cleric",
+            "target_id": "blue-mage"
+          },
+          "reason": "blocked line of sight",
+          "ap_remaining": 4
+        },
+        "error_category": null,
+        "command_start": 0,
+        "provider_requests": 1,
+        "inference": {
+          "version": "arena-inference-trace-v1",
+          "turn": 3,
+          "player_id": "blue",
+          "requested_provider": "openai",
+          "actual_provider": "openai",
+          "fallback_used": false,
+          "model": "gpt-5.6-luna",
+          "model_config_version": "luna-config-v1",
+          "model_configuration": {
+            "model": "gpt-5.6-luna",
+            "reasoning_effort": "none",
+            "max_output_tokens": 512,
+            "store": false,
+            "max_retries": 0
+          },
+          "prompt_version": "arena-turn-prompt-v6",
+          "schema_version": "arena-turn-plan-schema-v2",
+          "observation_hash": "a9da2a2895939ac277abb34abb825d650b83cffd021202ed67a4a5ddc3939e6d",
+          "observation_version": "arena-observation-v4",
+          "attempts": [
+            {
+              "raw_content": "{\"schema_version\":\"arena-turn-plan-schema-v2\",\"actions\":[{\"type\":\"move\",\"unit_id\":\"blue-cleric\",\"destination\":{\"x\":2,\"y\":3}},{\"type\":\"revive\",\"unit_id\":\"blue-cleric\",\"target_id\":\"blue-mage\"},{\"type\":\"end_turn\"}]}",
+              "metrics": {
+                "input_tokens": 1890,
+                "output_tokens": 72,
+                "total_tokens": 1962,
+                "cached_input_tokens": 0,
+                "reasoning_tokens": 0
+              },
+              "response_id": "resp_0d8ea49a1d212098016aa82d15430087d084edd2f5ece4537c",
+              "request_id": "req_b13305e6d19f4c5193b2bbb5095e3618",
+              "ledger_id": 2785,
+              "wall_clock_seconds": 1.6878659999929368
+            }
+          ],
+          "retry_count": 0,
+          "error_category": null,
+          "resulting_plan": {
+            "schema_version": "arena-turn-plan-schema-v2",
+            "actions": [
+              {
+                "type": "move",
+                "unit_id": "blue-cleric",
+                "destination": {
+                  "x": 2,
+                  "y": 3
+                }
+              },
+              {
+                "type": "revive",
+                "unit_id": "blue-cleric",
+                "target_id": "blue-mage"
+              },
+              {
+                "type": "end_turn"
+              }
+            ]
+          },
+          "wall_clock_seconds": 1.6878659999929368,
+          "repair_version": "arena-candidate-repair-v2"
+        },
+        "ap_remaining": 4,
+        "ap_executed": 1,
+        "command_end": 1,
+        "resulting_state_hash": "ec8f39cafe676251e61e51d608c7cd380c38e22a41ef27f8e9e677e6b3bd4426",
+        "stale_suffix_count": 2
+      },
+      {
+        "wave_index": 1,
+        "observation": {
+          "action_costs": {
+            "attack": 1,
+            "end_turn": 0,
+            "finish": 1,
+            "fireball": 2,
+            "heal": 1,
+            "move": 1,
+            "revive": 2,
+            "shield_bash": 1,
+            "snipe": 2
+          },
+          "action_points_remaining": 4,
+          "action_rules": {
+            "fireball": {
+              "base_damage": 4,
+              "damages_cores": false,
+              "friendly_fire": true,
+              "radius": 1
+            },
+            "heal": {
+              "restored_hp": 5
+            },
+            "revive": {
+              "restored_hp": 5
+            },
+            "shield_bash": {
+              "base_damage": 4,
+              "push_tiles": 1
+            },
+            "snipe": {
+              "base_damage": 8
+            }
+          },
+          "active_player_id": "blue",
+          "board": {
+            "blocked_tiles": [
+              {
+                "x": 3,
+                "y": 1
+              },
+              {
+                "x": 5,
+                "y": 1
+              },
+              {
+                "x": 3,
+                "y": 3
+              },
+              {
+                "x": 5,
+                "y": 3
+              }
+            ],
+            "default_tile": {
+              "bonus": null,
+              "terrain": "floor"
+            },
+            "height": 5,
+            "power": [
+              {
+                "x": 4,
+                "y": 0
+              },
+              {
+                "x": 4,
+                "y": 4
+              }
+            ],
+            "siege": [
+              {
+                "x": 3,
+                "y": 2
+              },
+              {
+                "x": 5,
+                "y": 2
+              }
+            ],
+            "ward": [
+              {
+                "x": 2,
+                "y": 2
+              },
+              {
+                "x": 6,
+                "y": 2
+              }
+            ],
+            "width": 9
+          },
+          "bonus_rules": {
+            "minimum_unit_damage": 1,
+            "power_damage": 2,
+            "siege_core_damage": 4,
+            "ward_reduction": 2
+          },
+          "enemy_team": {
+            "core": {
+              "hp": 30,
+              "id": "red-core",
+              "max_hp": 30,
+              "owner_id": "red",
+              "x": 8,
+              "y": 2
+            },
+            "player_id": "red",
+            "units": [
+              {
+                "hp": 9,
+                "id": "red-cleric",
+                "max_hp": 11,
+                "owner_id": "red",
+                "status": "active",
+                "unit_type": "cleric",
+                "x": 7,
+                "y": 2
+              },
+              {
+                "hp": 18,
+                "id": "red-knight",
+                "max_hp": 18,
+                "owner_id": "red",
+                "status": "active",
+                "unit_type": "knight",
+                "x": 7,
+                "y": 1
+              },
+              {
+                "hp": 9,
+                "id": "red-mage",
+                "max_hp": 9,
+                "owner_id": "red",
+                "status": "active",
+                "unit_type": "mage",
+                "x": 4,
+                "y": 4
+              },
+              {
+                "hp": 8,
+                "id": "red-ranger",
+                "max_hp": 10,
+                "owner_id": "red",
+                "status": "active",
+                "unit_type": "ranger",
+                "x": 6,
+                "y": 2
+              }
+            ]
+          },
+          "environment": "arena",
+          "legal_actions": [
+            {
+              "destination": {
+                "x": 0,
+                "y": 1
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 1,
+                "y": 1
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 2,
+                "y": 1
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 1,
+                "y": 2
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 2,
+                "y": 2
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 0,
+                "y": 3
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 1,
+                "y": 3
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 0,
+                "y": 4
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 1,
+                "y": 4
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 2,
+                "y": 4
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "destination": {
+                "x": 3,
+                "y": 4
+              },
+              "type": "move",
+              "unit_id": "blue-cleric"
+            },
+            {
+              "type": "end_turn"
+            }
+          ],
+          "legal_actions_state": "current_observation",
+          "own_team": {
+            "core": {
+              "hp": 30,
+              "id": "blue-core",
+              "max_hp": 30,
+              "owner_id": "blue",
+              "x": 0,
+              "y": 2
+            },
+            "player_id": "blue",
+            "units": [
+              {
+                "hp": 11,
+                "id": "blue-cleric",
+                "max_hp": 11,
+                "owner_id": "blue",
+                "status": "active",
+                "unit_type": "cleric",
+                "x": 2,
+                "y": 3
+              },
+              {
+                "hp": 0,
+                "id": "blue-mage",
+                "max_hp": 9,
+                "owner_id": "blue",
+                "status": "downed",
+                "unit_type": "mage",
+                "x": 3,
+                "y": 2
+              },
+              {
+                "hp": 0,
+                "id": "blue-ranger",
+                "max_hp": 10,
+                "owner_id": "blue",
+                "status": "downed",
+                "unit_type": "ranger",
+                "x": 4,
+                "y": 0
+              }
+            ]
+          },
+          "players": [
+            {
+              "id": "blue",
+              "name": "Blue Team"
+            },
+            {
+              "id": "red",
+              "name": "Red Team"
+            }
+          ],
+          "rules_version": "arena-rules-v2",
+          "scenario_version": "arena-scenario-v1",
+          "schema_version": "arena-observation-v4",
+          "turn": 3,
+          "unit_types": {
+            "cleric": {
+              "action_ranges": {
+                "attack": 2,
+                "finish": 1,
+                "heal": 2,
+                "move": 2,
+                "revive": 2
+              },
+              "stats": {
+                "attack_range": 2,
+                "damage": 3,
+                "heal_amount": 5,
+                "heal_range": 2,
+                "hp": 11,
+                "move_range": 2
+              }
+            },
+            "knight": {
+              "action_ranges": {
+                "attack": 1,
+                "finish": 1,
+                "move": 2,
+                "shield_bash": 1
+              },
+              "stats": {
+                "attack_range": 1,
+                "damage": 6,
+                "heal_amount": 0,
+                "heal_range": 0,
+                "hp": 18,
+                "move_range": 2
+              }
+            },
+            "mage": {
+              "action_ranges": {
+                "attack": 2,
+                "finish": 1,
+                "fireball": 2,
+                "move": 2
+              },
+              "stats": {
+                "attack_range": 2,
+                "damage": 6,
+                "heal_amount": 0,
+                "heal_range": 0,
+                "hp": 9,
+                "move_range": 2
+              }
+            },
+            "ranger": {
+              "action_ranges": {
+                "attack": 3,
+                "finish": 1,
+                "move": 3,
+                "snipe": 4
+              },
+              "stats": {
+                "attack_range": 3,
+                "damage": 5,
+                "heal_amount": 0,
+                "heal_range": 0,
+                "hp": 10,
+                "move_range": 3
+              }
+            }
+          },
+          "winner_player_id": null
+        },
+        "observation_hash": "071fbd34290ba7b1655591a7668d7a8a1f2a2a5806666628aa2e01371db582fd",
+        "ap_available": 4,
+        "plan": {
+          "schema_version": "arena-turn-plan-schema-v2",
+          "actions": [
+            {
+              "type": "move",
+              "unit_id": "blue-cleric",
+              "destination": {
+                "x": 3,
+                "y": 4
+              }
+            },
+            {
+              "type": "revive",
+              "unit_id": "blue-cleric",
+              "target_id": "blue-mage"
+            }
+          ]
+        },
+        "planned_ap": 3,
+        "actions_attempted": [
+          {
+            "index": 0,
+            "action": {
+              "type": "move",
+              "unit_id": "blue-cleric",
+              "destination": {
+                "x": 3,
+                "y": 4
+              }
+            },
+            "ap_before": 4,
+            "ap_after": 3,
+            "executed": true
+          },
+          {
+            "index": 1,
+            "action": {
+              "type": "revive",
+              "unit_id": "blue-cleric",
+              "target_id": "blue-mage"
+            },
+            "ap_before": 3,
+            "ap_after": 3,
+            "executed": false,
+            "error": "blocked line of sight"
+          }
+        ],
+        "commands_executed": [
+          {
+            "schema_version": "arena-command-v2",
+            "type": "arena_move",
+            "actor_id": "blue",
+            "unit_id": "blue-cleric",
+            "destination": {
+              "x": 3,
+              "y": 4
+            }
+          }
+        ],
+        "explicit_end_turn": false,
+        "planned_end_turn": false,
+        "clean_plan_complete": false,
+        "invalid_action": {
+          "index": 1,
+          "action": {
+            "type": "revive",
+            "unit_id": "blue-cleric",
+            "target_id": "blue-mage"
+          },
+          "reason": "blocked line of sight",
+          "ap_remaining": 3
+        },
+        "error_category": null,
+        "command_start": 1,
+        "provider_requests": 2,
+        "inference": {
+          "version": "arena-inference-trace-v1",
+          "turn": 3,
+          "player_id": "blue",
+          "requested_provider": "openai",
+          "actual_provider": "openai",
+          "fallback_used": false,
+          "model": "gpt-5.6-luna",
+          "model_config_version": "luna-config-v1",
+          "model_configuration": {
+            "model": "gpt-5.6-luna",
+            "reasoning_effort": "none",
+            "max_output_tokens": 512,
+            "store": false,
+            "max_retries": 0
+          },
+          "prompt_version": "arena-turn-prompt-v6",
+          "schema_version": "arena-turn-plan-schema-v2",
+          "observation_hash": "071fbd34290ba7b1655591a7668d7a8a1f2a2a5806666628aa2e01371db582fd",
+          "observation_version": "arena-observation-v4",
+          "attempts": [
+            {
+              "raw_content": null,
+              "metrics": {
+                "input_tokens": 1956,
+                "output_tokens": 64,
+                "total_tokens": 2020,
+                "cached_input_tokens": 0,
+                "reasoning_tokens": 0
+              },
+              "response_id": "resp_06b48e7d60a9914c016aa82d1713f887d0b972f4825d09f729",
+              "request_id": "req_c9f52d103ace44c7919da690a8e4c03f",
+              "ledger_id": 2786,
+              "wall_clock_seconds": 1.963516800024081,
+              "error_category": "invalid_reference",
+              "rejected_decision": {
+                "context_version": "arena-candidate-repair-context-v2",
+                "prompt_version": "arena-candidate-repair-prompt-v2",
+                "observation_hash": "071fbd34290ba7b1655591a7668d7a8a1f2a2a5806666628aa2e01371db582fd",
+                "rejected_output_sha256": "46a7b3e7438a5cb72d1d2f1fe6f71b26bfddbc9b8d7fae70118ca0695051ac6f",
+                "rejected_plan": {
+                  "schema_version": "arena-turn-plan-schema-v2",
+                  "actions": [
+                    {
+                      "type": "revive",
+                      "unit_id": "blue-cleric",
+                      "target_id": "blue-mage"
+                    },
+                    {
+                      "type": "revive",
+                      "unit_id": "blue-cleric",
+                      "target_id": "blue-ranger"
+                    }
+                  ]
+                },
+                "cardinality": "full_plan",
+                "validation": {
+                  "category": "invalid_reference",
+                  "action_index": 0,
+                  "field_path": null,
+                  "message": "Response failed static validation.",
+                  "rejected_value": null
+                },
+                "diagnostics": [
+                  {
+                    "code": "los",
+                    "action_index": 0,
+                    "action": {
+                      "type": "revive",
+                      "unit_id": "blue-cleric",
+                      "target_id": "blue-mage"
+                    },
+                    "message": "blocked line of sight",
+                    "actual_distance": 1,
+                    "allowed_range": 2,
+                    "los_required": true,
+                    "los_clear": false
+                  }
+                ],
+                "available_ap": 4,
+                "legal_actions_location": "ArenaObservation.legal_actions",
+                "omission": "Raw prose omitted; unknown references redacted; semantic actions retained when parseable.",
+                "planned_ap": 4,
+                "over_budget_by": 0,
+                "action_costs": [
+                  {
+                    "action_index": 0,
+                    "action": {
+                      "type": "revive",
+                      "unit_id": "blue-cleric",
+                      "target_id": "blue-mage"
+                    },
+                    "ap_cost": 2
+                  },
+                  {
+                    "action_index": 1,
+                    "action": {
+                      "type": "revive",
+                      "unit_id": "blue-cleric",
+                      "target_id": "blue-ranger"
+                    },
+                    "ap_cost": 2
+                  }
+                ],
+                "first_action_in_current_catalog": false,
+                "repair_result": "succeeded"
+              }
+            },
+            {
+              "raw_content": "{\"schema_version\":\"arena-turn-plan-schema-v2\",\"actions\":[{\"type\":\"move\",\"unit_id\":\"blue-cleric\",\"destination\":{\"x\":3,\"y\":4}},{\"type\":\"revive\",\"unit_id\":\"blue-cleric\",\"target_id\":\"blue-mage\"}]}",
+              "metrics": {
+                "input_tokens": 2502,
+                "output_tokens": 67,
+                "total_tokens": 2569,
+                "cached_input_tokens": 1953,
+                "reasoning_tokens": 0
+              },
+              "response_id": "resp_026a8d7bc71649c4016aa82d190fdc87d08075f8232412eb2d",
+              "request_id": "req_65d0d64f7d51493f9b13b5178d1baa85",
+              "ledger_id": 2787,
+              "wall_clock_seconds": 1.744282400002703
+            }
+          ],
+          "retry_count": 1,
+          "error_category": null,
+          "resulting_plan": {
+            "schema_version": "arena-turn-plan-schema-v2",
+            "actions": [
+              {
+                "type": "move",
+                "unit_id": "blue-cleric",
+                "destination": {
+                  "x": 3,
+                  "y": 4
+                }
+              },
+              {
+                "type": "revive",
+                "unit_id": "blue-cleric",
+                "target_id": "blue-mage"
+              }
+            ]
+          },
+          "wall_clock_seconds": 3.707799200026784,
+          "repair_version": "arena-candidate-repair-v2",
+          "repair_comparison": {
+            "valid": true,
+            "error_category": null,
+            "parsed_output": {
+              "schema_version": "arena-turn-plan-schema-v2",
+              "actions": [
+                {
+                  "type": "move",
+                  "unit_id": "blue-cleric",
+                  "destination": {
+                    "x": 3,
+                    "y": 4
+                  }
+                },
+                {
+                  "type": "revive",
+                  "unit_id": "blue-cleric",
+                  "target_id": "blue-mage"
+                }
+              ]
+            },
+            "category": "AMBIGUOUS",
+            "intent_interpretation": "Mechanical proxy; no tactical necessity claim.",
+            "end_turn": false,
+            "end_turn_introduced": false,
+            "original_end_turn_preserved": false,
+            "potential_endturn_escape": false,
+            "action_count_delta": 0,
+            "ap_plan_delta": -1,
+            "ap_valid": true,
+            "range_valid": true,
+            "reference_valid": true,
+            "repeated_diagnostic_codes": [],
+            "new_diagnostic_codes": [],
+            "diagnostics": []
+          }
+        },
+        "ap_remaining": 3,
+        "ap_executed": 1,
+        "command_end": 2,
+        "resulting_state_hash": "519206d733032b95e7fe3bfafe7aa4356461abcae4e1903592943118994ce395",
+        "stale_suffix_count": 1
+      }
+    ],
+    "ap_available": 5,
+    "ap_executed": 2,
+    "ap_remaining": 3,
+    "ap_unused": 3,
+    "stop_reason": "EXECUTION_TRUNCATION",
+    "explicit_end_turn": false,
+    "clean_short_plan": false,
+    "truncation": true,
+    "provider_failure": false,
+    "terminal": false,
+    "terminal_result": null,
+    "execution_invalidities": 2,
+    "replan_used": true,
+    "ap_at_replan": 4,
+    "ap_recovered": 1,
+    "first_plan_explicit_end_turn": false,
+    "first_plan_planned_end_turn": true,
+    "initial_plan_completed_cleanly": false,
+    "invalidity_triggered_replan": true,
+    "replacement_explicit_end_turn": false,
+    "replacement_clean_short_plan": false,
+    "second_invalidity": true,
+    "explicit_end_turn_decisions": 0,
+    "actions_before_intentional_stop": null,
+    "actions_executed": 2,
+    "decisions": 2,
+    "provider_requests": 3,
+    "static_repairs": 1,
+    "commands_executed": [
+      {
+        "schema_version": "arena-command-v2",
+        "type": "arena_move",
+        "actor_id": "blue",
+        "unit_id": "blue-cleric",
+        "destination": {
+          "x": 2,
+          "y": 3
+        }
+      },
+      {
+        "schema_version": "arena-command-v2",
+        "type": "arena_move",
+        "actor_id": "blue",
+        "unit_id": "blue-cleric",
+        "destination": {
+          "x": 3,
+          "y": 4
+        }
+      },
+      {
+        "schema_version": "arena-command-v2",
+        "type": "arena_end_turn",
+        "actor_id": "blue"
+      }
+    ],
+    "command_start": 0,
+    "command_end": 3,
+    "error_category": null,
+    "resulting_state_hash": "4f36e49766e7427382f04d33e6724bfd53fa7b1125fe87edbf945a712a4a6792",
+    "backend_thinking_seconds": 5.395665200019721,
+    "input_tokens": 6348,
+    "output_tokens": 203,
+    "total_tokens": 6551,
+    "control_wall_seconds": 5.618669300049078
+  },
+  "trace": {
+    "environment": "arena",
+    "schema_version": "arena-trace-v2",
+    "initial_snapshot": {
+      "environment": "arena",
+      "schema_version": "arena-snapshot-v2",
+      "config": {
+        "rules_version": "arena-rules-v2",
+        "scenario_version": "arena-scenario-v1"
+      },
+      "turn": 3,
+      "active_player_id": "blue",
+      "action_points_remaining": 5,
+      "winner_player_id": null,
+      "players": [
+        {
+          "id": "blue",
+          "name": "Blue Team"
+        },
+        {
+          "id": "red",
+          "name": "Red Team"
+        }
+      ],
+      "board": {
+        "width": 9,
+        "height": 5,
+        "tiles": [
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": "power"
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "blocked",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "blocked",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": "ward"
+          },
+          {
+            "terrain": "floor",
+            "bonus": "siege"
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": "siege"
+          },
+          {
+            "terrain": "floor",
+            "bonus": "ward"
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "blocked",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "blocked",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": "power"
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          },
+          {
+            "terrain": "floor",
+            "bonus": null
+          }
+        ]
+      },
+      "units": [
+        {
+          "id": "blue-cleric",
+          "owner_id": "blue",
+          "position": {
+            "x": 1,
+            "y": 4
+          },
+          "hp": 11,
+          "unit_type": "cleric",
+          "status": "active"
+        },
+        {
+          "id": "blue-mage",
+          "owner_id": "blue",
+          "position": {
+            "x": 3,
+            "y": 2
+          },
+          "hp": 0,
+          "unit_type": "mage",
+          "status": "downed"
+        },
+        {
+          "id": "blue-ranger",
+          "owner_id": "blue",
+          "position": {
+            "x": 4,
+            "y": 0
+          },
+          "hp": 0,
+          "unit_type": "ranger",
+          "status": "downed"
+        },
+        {
+          "id": "red-cleric",
+          "owner_id": "red",
+          "position": {
+            "x": 7,
+            "y": 2
+          },
+          "hp": 9,
+          "unit_type": "cleric",
+          "status": "active"
+        },
+        {
+          "id": "red-knight",
+          "owner_id": "red",
+          "position": {
+            "x": 7,
+            "y": 1
+          },
+          "hp": 18,
+          "unit_type": "knight",
+          "status": "active"
+        },
+        {
+          "id": "red-mage",
+          "owner_id": "red",
+          "position": {
+            "x": 4,
+            "y": 4
+          },
+          "hp": 9,
+          "unit_type": "mage",
+          "status": "active"
+        },
+        {
+          "id": "red-ranger",
+          "owner_id": "red",
+          "position": {
+            "x": 6,
+            "y": 2
+          },
+          "hp": 8,
+          "unit_type": "ranger",
+          "status": "active"
+        }
+      ],
+      "cores": [
+        {
+          "id": "blue-core",
+          "owner_id": "blue",
+          "position": {
+            "x": 0,
+            "y": 2
+          },
+          "hp": 30
+        },
+        {
+          "id": "red-core",
+          "owner_id": "red",
+          "position": {
+            "x": 8,
+            "y": 2
+          },
+          "hp": 30
+        }
+      ]
+    },
+    "entries": [
+      {
+        "command": {
+          "schema_version": "arena-command-v2",
+          "type": "arena_move",
+          "actor_id": "blue",
+          "unit_id": "blue-cleric",
+          "destination": {
+            "x": 2,
+            "y": 3
+          }
+        },
+        "command_hash": "b5c4d4fd38fa898d2e7838e9e85e786995056d0658e63989ed8fbbfda8ee4175",
+        "before_hash": "aef064d6c29bac0564c1bb5eeae96870f50c4d9beff0df41b2a03fce8110d70c",
+        "after_hash": "ec8f39cafe676251e61e51d608c7cd380c38e22a41ef27f8e9e677e6b3bd4426",
+        "ap_used": 1,
+        "ap_unused": 0,
+        "damage_dealt": 0,
+        "healing_done": 0,
+        "units_downed": 0,
+        "units_revived": 0,
+        "units_finished": 0,
+        "friendly_fire_damage": 0,
+        "core_damage": 0,
+        "bonus_tile_attacks": 0,
+        "shield_bash_pushes": 0,
+        "fireball_targets_hit": 0
+      },
+      {
+        "command": {
+          "schema_version": "arena-command-v2",
+          "type": "arena_move",
+          "actor_id": "blue",
+          "unit_id": "blue-cleric",
+          "destination": {
+            "x": 3,
+            "y": 4
+          }
+        },
+        "command_hash": "c5895ee30b95c17249701da22afdb10f0c604077a90b0cca7b01c015c89a3304",
+        "before_hash": "ec8f39cafe676251e61e51d608c7cd380c38e22a41ef27f8e9e677e6b3bd4426",
+        "after_hash": "519206d733032b95e7fe3bfafe7aa4356461abcae4e1903592943118994ce395",
+        "ap_used": 1,
+        "ap_unused": 0,
+        "damage_dealt": 0,
+        "healing_done": 0,
+        "units_downed": 0,
+        "units_revived": 0,
+        "units_finished": 0,
+        "friendly_fire_damage": 0,
+        "core_damage": 0,
+        "bonus_tile_attacks": 0,
+        "shield_bash_pushes": 0,
+        "fireball_targets_hit": 0
+      },
+      {
+        "command": {
+          "schema_version": "arena-command-v2",
+          "type": "arena_end_turn",
+          "actor_id": "blue"
+        },
+        "command_hash": "fdd1266518b21c3d3940e49b473d53b983462840e9b10d6825a925656052b886",
+        "before_hash": "519206d733032b95e7fe3bfafe7aa4356461abcae4e1903592943118994ce395",
+        "after_hash": "4f36e49766e7427382f04d33e6724bfd53fa7b1125fe87edbf945a712a4a6792",
+        "ap_used": 0,
+        "ap_unused": 3,
+        "damage_dealt": 0,
+        "healing_done": 0,
+        "units_downed": 0,
+        "units_revived": 0,
+        "units_finished": 0,
+        "friendly_fire_damage": 0,
+        "core_damage": 0,
+        "bonus_tile_attacks": 0,
+        "shield_bash_pushes": 0,
+        "fireball_targets_hit": 0
+      }
+    ]
+  },
+  "final_state": {
+    "environment": "arena",
+    "schema_version": "arena-snapshot-v2",
+    "config": {
+      "rules_version": "arena-rules-v2",
+      "scenario_version": "arena-scenario-v1"
+    },
+    "turn": 3,
+    "active_player_id": "red",
+    "action_points_remaining": 5,
+    "winner_player_id": null,
+    "players": [
+      {
+        "id": "blue",
+        "name": "Blue Team"
+      },
+      {
+        "id": "red",
+        "name": "Red Team"
+      }
+    ],
+    "board": {
+      "width": 9,
+      "height": 5,
+      "tiles": [
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": "power"
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "blocked",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "blocked",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": "ward"
+        },
+        {
+          "terrain": "floor",
+          "bonus": "siege"
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": "siege"
+        },
+        {
+          "terrain": "floor",
+          "bonus": "ward"
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "blocked",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "blocked",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": "power"
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        },
+        {
+          "terrain": "floor",
+          "bonus": null
+        }
+      ]
+    },
+    "units": [
+      {
+        "id": "blue-cleric",
+        "owner_id": "blue",
+        "position": {
+          "x": 3,
+          "y": 4
+        },
+        "hp": 11,
+        "unit_type": "cleric",
+        "status": "active"
+      },
+      {
+        "id": "blue-mage",
+        "owner_id": "blue",
+        "position": {
+          "x": 3,
+          "y": 2
+        },
+        "hp": 0,
+        "unit_type": "mage",
+        "status": "downed"
+      },
+      {
+        "id": "blue-ranger",
+        "owner_id": "blue",
+        "position": {
+          "x": 4,
+          "y": 0
+        },
+        "hp": 0,
+        "unit_type": "ranger",
+        "status": "downed"
+      },
+      {
+        "id": "red-cleric",
+        "owner_id": "red",
+        "position": {
+          "x": 7,
+          "y": 2
+        },
+        "hp": 9,
+        "unit_type": "cleric",
+        "status": "active"
+      },
+      {
+        "id": "red-knight",
+        "owner_id": "red",
+        "position": {
+          "x": 7,
+          "y": 1
+        },
+        "hp": 18,
+        "unit_type": "knight",
+        "status": "active"
+      },
+      {
+        "id": "red-mage",
+        "owner_id": "red",
+        "position": {
+          "x": 4,
+          "y": 4
+        },
+        "hp": 9,
+        "unit_type": "mage",
+        "status": "active"
+      },
+      {
+        "id": "red-ranger",
+        "owner_id": "red",
+        "position": {
+          "x": 6,
+          "y": 2
+        },
+        "hp": 8,
+        "unit_type": "ranger",
+        "status": "active"
+      }
+    ],
+    "cores": [
+      {
+        "id": "blue-core",
+        "owner_id": "blue",
+        "position": {
+          "x": 0,
+          "y": 2
+        },
+        "hp": 30
+      },
+      {
+        "id": "red-core",
+        "owner_id": "red",
+        "position": {
+          "x": 8,
+          "y": 2
+        },
+        "hp": 30
+      }
+    ]
+  },
+  "request_ids": [
+    2785,
+    2786,
+    2787
+  ],
+  "request_files": {
+    "requests/002785/payload.json": "74fe653bc4ea00a267da61c1e0f1d0b55a9ef47d69ecced89cab1da79c6fa025",
+    "requests/002785/receipt.json": "85a39b183ee2533cb7d1f244f91b03c9c8e1b3e43b5c121a14b5f106a06e993d",
+    "requests/002785/reservation.json": "52b2ecc6c07447221ac185add2cbd7334c7e6af9bb96ea3269703352765fe1cf",
+    "requests/002786/payload.json": "846801633869a9c26518ab395e92af2c9915afb411d87735ef170a29f487a17b",
+    "requests/002786/receipt.json": "b3398ee2adff384bc4c5253b904204bf0d8c838e195ba51df5e705b2ec41a5cb",
+    "requests/002786/reservation.json": "8f10c5912e6acc295345d69e4d185cdf7ece7eaea539bb67ae882a986f9abf8d",
+    "requests/002787/payload.json": "eefe55155239f3631b48848835104c06b8a4e439ce7f962052be5fdd2a59c29c",
+    "requests/002787/receipt.json": "054b7b2db2c939308119bd2df606f6b98ae3178ccd346e011cf088f72b74d43e",
+    "requests/002787/reservation.json": "39f320d673acc419e9cc27ecbcf9672e412433688222209158844c5b906ad109"
+  },
+  "sha256": "a809d046d56beb658b19b03db573c51e0b0eb14682ac3d2577476df32f6803c1"
+}

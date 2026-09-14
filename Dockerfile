@@ -46,4 +46,4 @@ COPY frontend ./frontend
 COPY scripts ./scripts
 EXPOSE 8000
 # Each process owns one in-memory game; never run multiple workers.
-CMD ["python", "-m", "uvicorn", "aig.web:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["python", "-m", "uvicorn", "aig.control_web:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

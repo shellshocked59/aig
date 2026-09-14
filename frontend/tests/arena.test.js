@@ -646,3 +646,41 @@ test('missing observer route gives a restart instruction instead of a generic fa
     await assert.rejects(request,error=>error.code==='observer_unavailable' && /docker compose restart api/.test(error.message) && /restart npm run dev/.test(error.message));
   }
 });
+
+
+test('Adaptive selector is idle, configures new sessions and New Match retains authoritative control', async (t) => {
+  const calls = [];
+  const state = fixture();
+  state.controllers = {blue: 'human', red: 'openai_ai'};
+  state.control_mode = 'full_turn';
+  const ui = await setup(t, {state, overrides: {
+    createAiDemo: async (provider, control) => {
+      calls.push([provider, control]);
+      return {...structuredClone(state), control_mode: control};
+    },
+  }});
+  assert.equal(calls.length, 0);
+  const select = ui.root.querySelector('[data-arena-control]');
+  assert.equal(select.value, 'full_turn');
+  assert.deepEqual([...select.options].map(o => o.value), ['full_turn', 'bounded_replan', 'stepwise']);
+  select.value = 'bounded_replan';
+  select.dispatchEvent(new ui.dom.window.Event('change', {bubbles: true}));
+  assert.equal(calls.length, 0);
+  await ui.click('[data-arena="demo-openai"]');
+  assert.deepEqual(calls[0], ['openai', 'bounded_replan']);
+  await ui.click('[data-arena="reset"]');
+  assert.deepEqual(calls[1], ['openai', 'bounded_replan']);
+});
+
+test('Arena API passes explicit control mode in one creation request', async () => {
+  const urls = [];
+  const api = createArenaApi(async (url) => { urls.push(url); return {ok: true, json: async () => ({control_mode: url.split('control_mode=')[1]})}; });
+  await api.createAiDemo('openai', 'bounded_replan');
+  await api.createObserverDemo('stepwise');
+  assert.deepEqual(urls, ['/api/arena/demo-ai/openai?control_mode=bounded_replan', '/api/arena/observer/demo?control_mode=stepwise']);
+});
+
+test('an old host cannot silently accept Adaptive while running strict control', async () => {
+  const api = createArenaApi(async () => ({ok: true, json: async () => ({})}));
+  await assert.rejects(api.createAiDemo('openai', 'bounded_replan'), error => error.code === 'control_unavailable');
+});

@@ -25,12 +25,19 @@ export function createArenaApi(fetcher = browserFetch, baseUrl = configuredApiBa
     }
     return body;
   }
+  async function createControlled(path, controlMode) {
+    const result = await request(path + (controlMode ? `?control_mode=${encodeURIComponent(controlMode)}` : ''));
+    if (controlMode && controlMode !== 'full_turn' && result.control_mode !== controlMode) {
+      throw new ApiError('control_unavailable', 'This backend does not support the selected AI control. Restart npm run dev or the Docker backend to load the current gameplay host.', 409);
+    }
+    return result;
+  }
   return {
-    createObserverDemo: () => request('/observer/demo'),
+    createObserverDemo: (controlMode) => createControlled('/observer/demo', controlMode),
     observerTurn: () => request('/observer/turn'),
     getGame: () => request('', undefined, 'GET'),
     createDemo: () => request('/demo'),
-    createAiDemo: (provider) => request(provider ? `/demo-ai/${encodeURIComponent(provider)}` : '/demo-ai'),
+    createAiDemo: (provider, controlMode) => createControlled(provider ? `/demo-ai/${encodeURIComponent(provider)}` : '/demo-ai', controlMode),
     command: (type, actor_id, details = {}) => request('/commands', {
       ...details, schema_version: 'arena-command-v2', type: `arena_${type}`, actor_id,
     }),

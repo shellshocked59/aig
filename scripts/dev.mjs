@@ -39,7 +39,7 @@ try {
       });
     });
   }
-  start(python, ['-m', 'uvicorn', 'aig.web:create_app', '--factory', '--host', '127.0.0.1', '--port', String(apiPort)]);
+  start(python, ['-m', 'uvicorn', 'aig.control_web:create_app', '--factory', '--host', '127.0.0.1', '--port', String(apiPort)]);
   let ready = false;
   for (let attempt = 0; attempt < 100 && !stopping; attempt++) {
     try { ready = (await fetch(`http://127.0.0.1:${apiPort}/api/health`, { signal: AbortSignal.timeout(500) })).ok; } catch {}

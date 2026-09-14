@@ -1,0 +1,59 @@
+{
+  "$id": "arena-candidate-repair-context-v2",
+  "properties": {
+    "available_ap": {
+      "type": "integer"
+    },
+    "cardinality": {
+      "enum": [
+        "at_most_one",
+        "full_plan"
+      ]
+    },
+    "context_version": {
+      "const": "arena-candidate-repair-context-v2"
+    },
+    "diagnostics": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "observation_hash": {
+      "type": "string"
+    },
+    "over_budget_by": {
+      "type": "integer"
+    },
+    "planned_ap": {
+      "type": "integer"
+    },
+    "prompt_version": {
+      "const": "arena-candidate-repair-prompt-v2"
+    },
+    "rejected_output_sha256": {
+      "type": "string"
+    },
+    "rejected_plan": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "validation": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "context_version",
+    "prompt_version",
+    "observation_hash",
+    "rejected_output_sha256",
+    "rejected_plan",
+    "cardinality",
+    "validation",
+    "diagnostics",
+    "available_ap"
+  ],
+  "type": "object"
+}

@@ -1,0 +1,45 @@
+You control one team in a deterministic, perfect-information fantasy tactics battle.
+Choose a legal sequence of tactical actions using only the supplied ArenaObservation.
+The observation's action_points_remaining is the complete AP budget for this plan.
+The total cost of your returned actions MUST NOT exceed it. Keep a running remaining
+budget: confirm an action is affordable and subtract its cost before adding another.
+Actions execute in order; earlier actions can change later legality. An illegal action
+truncates the remaining plan and ends the turn; prior actions remain committed.
+Win by destroying the enemy Core or leaving the enemy with no ACTIVE units.
+Use supplied unit/Core IDs, board positions, and ability names. The actions lists
+describe legal options now; movement, damage and revival can change these options.
+Move, Attack, Heal, Finish and Shield Bash cost 1 AP. Revive, Snipe and Fireball cost 2 AP.
+Abilities supply ranges; unit stats supply basic damage, movement and healing.
+Movement is eight-directional, cannot pass occupied/blocked tiles or cut blocked corners.
+Ruins block ranged line of sight. DOWNED units occupy tiles and cannot act.
+Attack damages an active enemy or enemy Core. Heal restores an active ally, including self.
+Finish removes an adjacent downed enemy. Revive restores a downed ally to 5 HP;
+revived units can act immediately. Shield Bash deals 4 damage and pushes one tile
+when the destination is free. Snipe deals 8 damage at range 4. Fireball targets a
+tile at range 2 and deals 4 damage to ACTIVE units within one tile, including allies
+and caster; if both teams lose all active units the casting team loses.
+Special abilities cannot damage Cores. Observation bonus_rules describe tile effects.
+Start from the current authoritative observation, including on a partial turn.
+Treat the plan as a sequence of state transitions, not independent starting options.
+For each action in order: check actor, ability and target legality in the current
+imagined state; check and subtract AP; apply the supplied mechanical consequences
+to HP, status, occupancy and positions; only then choose the next action.
+The first action must appear in its actor's current legal-action list. Later
+actions use the updated state, where options may disappear or become available.
+If damage DOWNs a unit, it is no longer an ACTIVE target: later Attack, Snipe or
+Shield Bash cannot target that enemy unit. DOWNED units cannot act. Finish may
+target a DOWNED enemy when legal; it is optional. Once removed by Finish, a unit
+cannot be a later actor or target, and its tile is no longer occupied by it.
+Revive changes a DOWNED ally to ACTIVE; the revived unit may act later this turn.
+Movement and a surviving Shield Bash target's push change positions. Reassess
+range, adjacency, target availability and required LOS from the updated board
+at each action, not from the original positions. Range uses Chebyshev distance.
+Ranged LOS checks the center-to-center supercover excluding endpoints; blocked
+terrain blocks it, including both side tiles at an exact corner crossing.
+Units and Cores do not block LOS.
+If an action ends the game, stop the sequence there; append no later actions.
+Use AP productively when a coherent legal continuation exists. You need not spend
+every AP: stop with a shorter legal plan when later legality is uncertain.
+Derive consequences from the supplied mechanics, not memorized action combinations.
+Return only the ArenaTurnPlan required by the schema, with zero to five actions.
+The engine ends the turn automatically. Do not include reasoning or commentary.

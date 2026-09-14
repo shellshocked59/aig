@@ -9,6 +9,7 @@ import { ArenaAnimationDriver, createArenaRegistry } from './arena-animation.js'
 /** Manual/AI controller: all destinations, targets, HP and AP come from Python. */
 export function mountArena(root, api, options = {}) {
   let state = null;
+  let selectedControl = null;
   let authoritative = null;
   let playing = false;
   let generation = 0;
@@ -56,6 +57,9 @@ export function mountArena(root, api, options = {}) {
       <header class="arena-header"><div><h1>Arena</h1><p>Break their Core. Protect your team.</p></div>
       <div class="arena-match-controls"><span class="arena-mode-label">Play mode</span>
       <details class="arena-experimental"><summary>${state ? esc(matchLabel.split(' · ')[0]) : 'Choose mode'}</summary><div>
+      <label>AI control <select data-arena-control ${disabled()}>
+      ${[['full_turn', 'Strict Full Turn'], ['bounded_replan', 'Adaptive ? Replan if blocked'], ['stepwise', 'Stepwise ? Re-evaluate every action']].map(([value, label]) => `<option value="${value}" ${(selectedControl || state?.control_mode || 'full_turn') === value ? 'selected' : ''}>${label}</option>`).join('')}
+      </select></label><small>Applies to new matches.</small>
       <button data-arena="demo-ai-v2" ${disabled()}>Human vs Heuristic</button>
       <button data-arena="demo-openai" ${disabled()}>Human vs OpenAI Luna</button>
       <button data-arena="demo-observer" ${disabled()}>OpenAI Luna vs OpenAI Luna</button></div></details>
@@ -140,6 +144,11 @@ export function mountArena(root, api, options = {}) {
     return pending;
   }
 
+  function onControlChange(event) {
+    if (event.target.matches('[data-arena-control]') && !busy) selectedControl = event.target.value;
+  }
+  root.addEventListener('change', onControlChange);
+
   function onClick(event) {
     const button = event.target.closest('[data-arena]');
     if (!button || !root.contains(button) || button.disabled || (busy && !['reset', 'refresh'].includes(button.dataset.arena))) return;
@@ -151,14 +160,14 @@ export function mountArena(root, api, options = {}) {
       button.parentElement.toggleAttribute('data-help-dismissed', expanded);
       return;
     }
-    if (action === 'demo-ai-v2') return run(() => api.createAiDemo('heuristic-v2'), true);
-    if (action === 'demo-openai') return run(() => api.createAiDemo('openai'), true);
-    if (action === 'demo-observer') return run(() => api.createObserverDemo(), true);
+    if (action === 'demo-ai-v2') return run(() => api.createAiDemo('heuristic-v2', selectedControl), true);
+    if (action === 'demo-openai') return run(() => api.createAiDemo('openai', selectedControl), true);
+    if (action === 'demo-observer') return run(() => api.createObserverDemo(selectedControl), true);
     if (action === 'observer-turn') return run(() => api.observerTurn(), false, true);
     if (action === 'reset') {
-      if (Object.values(state?.controllers || {}).length && Object.values(state.controllers).every(c => c !== 'human')) return run(() => api.createObserverDemo(), true);
+      if (Object.values(state?.controllers || {}).length && Object.values(state.controllers).every(c => c !== 'human')) return run(() => api.createObserverDemo(state?.control_mode), true);
       const controller = Object.values(state?.controllers || {}).find(c => c !== 'human');
-      return run(() => controller ? api.createAiDemo(controller.replace(/_ai$/, '')) : api.createDemo(), true);
+      return run(() => controller ? api.createAiDemo(controller.replace(/_ai$/, ''), state?.control_mode) : api.createDemo(), true);
     }
     if (action === 'refresh') return run(() => api.getGame(), true);
     if (action === 'end') return run(() => api.command('end_turn', state.active_player_id), false,
@@ -210,5 +219,5 @@ export function mountArena(root, api, options = {}) {
     get state() { return state; }, get authoritative() { return authoritative; },
     cancel: () => { generation++; engine.cancel(); busy = false; aiPending = false; if (authoritative) state = authoritative; render(); },
     destroy: () => { destroyed = true; generation++; engine.cancel(); root.removeEventListener('click', onClick);
-      root.removeEventListener('keydown', onHelpKey); root.removeEventListener('pointerover', onHelpEnter); root.removeEventListener('focusin', onHelpEnter); } };
+      root.removeEventListener('change', onControlChange); root.removeEventListener('keydown', onHelpKey); root.removeEventListener('pointerover', onHelpEnter); root.removeEventListener('focusin', onHelpEnter); } };
 }

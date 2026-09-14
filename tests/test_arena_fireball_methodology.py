@@ -30,6 +30,33 @@ class Fake(m.LunaBehaviorProvider):
 
 class MethodologyTests(unittest.TestCase):
     def setUp(self):
+        # Exercise the frozen Fireball experiment in its original source scope.
+        # These additive control modules are not imported by that runner. Keep
+        # every original file/hash and the runtime source-drift checks intact.
+        additions = {
+            'backend/aig/arena/ai/sequential_prompt.py',
+            'backend/aig/arena/ai/ap_budget_prompt.py',
+            'backend/aig/arena/ap_budget_literacy.py',
+            'backend/aig/arena/sequential_literacy.py',
+            'backend/aig/arena/ai/bounded_replan.py',
+            'backend/aig/arena/benchmark_artifacts/arena-benchmark-v6.json',
+            'backend/aig/arena/bounded_replan_benchmark.py',
+            'backend/aig/arena/control_settings.py',
+            'backend/aig/control_web.py',
+            'backend/aig/arena/bounded_replan_comparison.py',
+            'backend/aig/arena/bounded_replan_recovery_smoke.py',
+            'backend/aig/arena/mechanics_oracle.py',
+            'backend/aig/arena/tactical_literacy.py',
+            'backend/aig/arena/tactical_literacy_fixtures.py',
+            'backend/aig/arena/benchmark_artifacts/arena-tactical-literacy-v1.json',
+        }
+        from arena_candidate_scope import CANDIDATE_ADDITIONS
+        additions.update(CANDIDATE_ADDITIONS)
+        source_reader = m.sources
+        source_scope = patch.object(m, 'sources', side_effect=lambda: {
+            p: h for p, h in source_reader().items() if p not in additions})
+        source_scope.start()
+        self.addCleanup(source_scope.stop)
         self.temp=TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name)

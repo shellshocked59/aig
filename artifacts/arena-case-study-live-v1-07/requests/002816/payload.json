@@ -1,0 +1,274 @@
+{
+  "instructions": "You control one team in a perfect-information fantasy tactics battle.\nUse the authoritative observation, rule facts, and legal actions. Win by destroying\nthe enemy Core or leaving the enemy with no ACTIVE units. Use supplied IDs,\npositions, and ability names. Legal actions describe the current observation;\nactions execute in order and earlier actions can change later legality.\naction_points_remaining is the complete AP budget for this decision/plan.\nKeep a running total of action costs. Before adding each action, ensure its cost\nfits within the AP still remaining. Total planned cost MUST NOT exceed this budget.\nUse the supplied costs, ranges, damage, status, movement, and bonus rules.\nMovement is eight-directional and cannot pass occupied/blocked tiles or cut blocked\ncorners. Ruins block ranged line of sight. DOWNED units occupy tiles and cannot act.\nAttack targets an ACTIVE enemy or enemy Core; special abilities cannot damage Cores.\nHeal targets ACTIVE allies, including self; Finish removes an adjacent DOWNED enemy;\nRevive restores a DOWNED ally, which can act immediately. Shield Bash can push its\ntarget if the destination is free. Fireball affects ACTIVE units in its area,\nincluding allies and caster; if both teams lose all ACTIVE units, the caster loses.\nChoose useful legal actions for the current tactical situation; several actions\nmay be worthwhile. You may explicitly end_turn with AP remaining when you judge\nno further action worthwhile. Do not add meaningless or speculative actions merely\nto consume AP. end_turn costs 0 AP and must be last; victory stops execution before\nany later action. An empty or short plan without end_turn is plan completion,\nnot an explicit intentional stop. Output only the required structured plan.\nNo reasoning, explanation, or commentary.\nReturn ArenaTurnPlan with the single next action or end_turn (at most one action).\nFollow schema_version=arena-turn-plan-schema-v2. After a successful gameplay action,\nif AP remains, you receive a fresh authoritative observation for the next decision.",
+  "input": [
+    {
+      "role": "user",
+      "content": "ArenaObservation:\n{\"action_costs\":{\"attack\":1,\"end_turn\":0,\"finish\":1,\"fireball\":2,\"heal\":1,\"move\":1,\"revive\":2,\"shield_bash\":1,\"snipe\":2},\"action_points_remaining\":3,\"action_rules\":{\"fireball\":{\"base_damage\":4,\"damages_cores\":false,\"friendly_fire\":true,\"radius\":1},\"heal\":{\"restored_hp\":5},\"revive\":{\"restored_hp\":5},\"shield_bash\":{\"base_damage\":4,\"push_tiles\":1},\"snipe\":{\"base_damage\":8}},\"active_player_id\":\"red\",\"board\":{\"blocked_tiles\":[{\"x\":3,\"y\":1},{\"x\":5,\"y\":1},{\"x\":3,\"y\":3},{\"x\":5,\"y\":3}],\"default_tile\":{\"bonus\":null,\"terrain\":\"floor\"},\"height\":5,\"power\":[{\"x\":4,\"y\":0},{\"x\":4,\"y\":4}],\"siege\":[{\"x\":3,\"y\":2},{\"x\":5,\"y\":2}],\"ward\":[{\"x\":2,\"y\":2},{\"x\":6,\"y\":2}],\"width\":9},\"bonus_rules\":{\"minimum_unit_damage\":1,\"power_damage\":2,\"siege_core_damage\":4,\"ward_reduction\":2},\"enemy_team\":{\"core\":{\"hp\":30,\"id\":\"blue-core\",\"max_hp\":30,\"owner_id\":\"blue\",\"x\":0,\"y\":2},\"player_id\":\"blue\",\"units\":[{\"hp\":11,\"id\":\"blue-cleric\",\"max_hp\":11,\"owner_id\":\"blue\",\"status\":\"active\",\"unit_type\":\"cleric\",\"x\":3,\"y\":2},{\"hp\":18,\"id\":\"blue-knight\",\"max_hp\":18,\"owner_id\":\"blue\",\"status\":\"active\",\"unit_type\":\"knight\",\"x\":4,\"y\":4},{\"hp\":9,\"id\":\"blue-mage\",\"max_hp\":9,\"owner_id\":\"blue\",\"status\":\"active\",\"unit_type\":\"mage\",\"x\":4,\"y\":0},{\"hp\":5,\"id\":\"blue-ranger\",\"max_hp\":10,\"owner_id\":\"blue\",\"status\":\"active\",\"unit_type\":\"ranger\",\"x\":5,\"y\":2}]},\"environment\":\"arena\",\"legal_actions\":[{\"target_id\":\"red-mage\",\"type\":\"heal\",\"unit_id\":\"red-cleric\"},{\"destination\":{\"x\":7,\"y\":2},\"type\":\"move\",\"unit_id\":\"red-cleric\"},{\"destination\":{\"x\":6,\"y\":3},\"type\":\"move\",\"unit_id\":\"red-cleric\"},{\"destination\":{\"x\":7,\"y\":3},\"type\":\"move\",\"unit_id\":\"red-cleric\"},{\"destination\":{\"x\":8,\"y\":3},\"type\":\"move\",\"unit_id\":\"red-cleric\"},{\"destination\":{\"x\":5,\"y\":4},\"type\":\"move\",\"unit_id\":\"red-cleric\"},{\"destination\":{\"x\":6,\"y\":4},\"type\":\"move\",\"unit_id\":\"red-cleric\"},{\"destination\":{\"x\":8,\"y\":4},\"type\":\"move\",\"unit_id\":\"red-cleric\"},{\"destination\":{\"x\":5,\"y\":0},\"type\":\"move\",\"unit_id\":\"red-knight\"},{\"destination\":{\"x\":6,\"y\":0},\"type\":\"move\",\"unit_id\":\"red-knight\"},{\"destination\":{\"x\":8,\"y\":0},\"type\":\"move\",\"unit_id\":\"red-knight\"},{\"destination\":{\"x\":6,\"y\":1},\"type\":\"move\",\"unit_id\":\"red-knight\"},{\"destination\":{\"x\":8,\"y\":1},\"type\":\"move\",\"unit_id\":\"red-knight\"},{\"destination\":{\"x\":7,\"y\":2},\"type\":\"move\",\"unit_id\":\"red-knight\"},{\"destination\":{\"x\":6,\"y\":3},\"type\":\"move\",\"unit_id\":\"red-knight\"},{\"destination\":{\"x\":7,\"y\":3},\"type\":\"move\",\"unit_id\":\"red-knight\"},{\"destination\":{\"x\":8,\"y\":3},\"type\":\"move\",\"unit_id\":\"red-knight\"},{\"target_id\":\"blue-ranger\",\"type\":\"attack\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":6,\"y\":0},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":7,\"y\":0},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":8,\"y\":0},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":5,\"y\":1},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":6,\"y\":1},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":7,\"y\":1},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":8,\"y\":1},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":4,\"y\":2},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":5,\"y\":2},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":6,\"y\":2},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":7,\"y\":2},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":8,\"y\":2},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":5,\"y\":3},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":6,\"y\":3},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":7,\"y\":3},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":8,\"y\":3},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":6,\"y\":4},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":7,\"y\":4},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"target_position\":{\"x\":8,\"y\":4},\"type\":\"fireball\",\"unit_id\":\"red-mage\"},{\"destination\":{\"x\":6,\"y\":0},\"type\":\"move\",\"unit_id\":\"red-mage\"},{\"destination\":{\"x\":6,\"y\":1},\"type\":\"move\",\"unit_id\":\"red-mage\"},{\"destination\":{\"x\":8,\"y\":1},\"type\":\"move\",\"unit_id\":\"red-mage\"},{\"destination\":{\"x\":7,\"y\":2},\"type\":\"move\",\"unit_id\":\"red-mage\"},{\"destination\":{\"x\":6,\"y\":3},\"type\":\"move\",\"unit_id\":\"red-mage\"},{\"destination\":{\"x\":7,\"y\":3},\"type\":\"move\",\"unit_id\":\"red-mage\"},{\"destination\":{\"x\":8,\"y\":3},\"type\":\"move\",\"unit_id\":\"red-mage\"},{\"destination\":{\"x\":6,\"y\":4},\"type\":\"move\",\"unit_id\":\"red-mage\"},{\"destination\":{\"x\":8,\"y\":4},\"type\":\"move\",\"unit_id\":\"red-mage\"},{\"type\":\"end_turn\"}],\"legal_actions_state\":\"current_observation\",\"own_team\":{\"core\":{\"hp\":12,\"id\":\"red-core\",\"max_hp\":30,\"owner_id\":\"red\",\"x\":8,\"y\":2},\"player_id\":\"red\",\"units\":[{\"hp\":11,\"id\":\"red-cleric\",\"max_hp\":11,\"owner_id\":\"red\",\"status\":\"active\",\"unit_type\":\"cleric\",\"x\":7,\"y\":4},{\"hp\":18,\"id\":\"red-knight\",\"max_hp\":18,\"owner_id\":\"red\",\"status\":\"active\",\"unit_type\":\"knight\",\"x\":7,\"y\":1},{\"hp\":5,\"id\":\"red-mage\",\"max_hp\":9,\"owner_id\":\"red\",\"status\":\"active\",\"unit_type\":\"mage\",\"x\":6,\"y\":2},{\"hp\":0,\"id\":\"red-ranger\",\"max_hp\":10,\"owner_id\":\"red\",\"status\":\"downed\",\"unit_type\":\"ranger\",\"x\":7,\"y\":0}]},\"players\":[{\"id\":\"blue\",\"name\":\"Blue Team\"},{\"id\":\"red\",\"name\":\"Red Team\"}],\"rules_version\":\"arena-rules-v2\",\"scenario_version\":\"arena-scenario-v1\",\"schema_version\":\"arena-observation-v4\",\"turn\":4,\"unit_types\":{\"cleric\":{\"action_ranges\":{\"attack\":2,\"finish\":1,\"heal\":2,\"move\":2,\"revive\":2},\"stats\":{\"attack_range\":2,\"damage\":3,\"heal_amount\":5,\"heal_range\":2,\"hp\":11,\"move_range\":2}},\"knight\":{\"action_ranges\":{\"attack\":1,\"finish\":1,\"move\":2,\"shield_bash\":1},\"stats\":{\"attack_range\":1,\"damage\":6,\"heal_amount\":0,\"heal_range\":0,\"hp\":18,\"move_range\":2}},\"mage\":{\"action_ranges\":{\"attack\":2,\"finish\":1,\"fireball\":2,\"move\":2},\"stats\":{\"attack_range\":2,\"damage\":6,\"heal_amount\":0,\"heal_range\":0,\"hp\":9,\"move_range\":2}},\"ranger\":{\"action_ranges\":{\"attack\":3,\"finish\":1,\"move\":3,\"snipe\":4},\"stats\":{\"attack_range\":3,\"damage\":5,\"heal_amount\":0,\"heal_range\":0,\"hp\":10,\"move_range\":3}}},\"winner_player_id\":null}"
+    }
+  ],
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "actions"
+    ],
+    "properties": {
+      "schema_version": {
+        "type": "string",
+        "enum": [
+          "arena-turn-plan-schema-v2"
+        ]
+      },
+      "actions": {
+        "type": "array",
+        "maxItems": 1,
+        "items": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "unit_id",
+                "destination"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "move"
+                  ]
+                },
+                "unit_id": {
+                  "type": "string"
+                },
+                "destination": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 8
+                    },
+                    "y": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 4
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "unit_id",
+                "target_id"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "attack"
+                  ]
+                },
+                "unit_id": {
+                  "type": "string"
+                },
+                "target_id": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "unit_id",
+                "target_id"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "heal"
+                  ]
+                },
+                "unit_id": {
+                  "type": "string"
+                },
+                "target_id": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "unit_id",
+                "target_id"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "finish"
+                  ]
+                },
+                "unit_id": {
+                  "type": "string"
+                },
+                "target_id": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "unit_id",
+                "target_id"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "revive"
+                  ]
+                },
+                "unit_id": {
+                  "type": "string"
+                },
+                "target_id": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "unit_id",
+                "target_id"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "shield_bash"
+                  ]
+                },
+                "unit_id": {
+                  "type": "string"
+                },
+                "target_id": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "unit_id",
+                "target_id"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "snipe"
+                  ]
+                },
+                "unit_id": {
+                  "type": "string"
+                },
+                "target_id": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "unit_id",
+                "target_position"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "fireball"
+                  ]
+                },
+                "unit_id": {
+                  "type": "string"
+                },
+                "target_position": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 8
+                    },
+                    "y": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 4
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "end_turn"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "configuration": {
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "none",
+    "max_output_tokens": 512,
+    "store": false,
+    "max_retries": 0
+  },
+  "fake": false
+}
