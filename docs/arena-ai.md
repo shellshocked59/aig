@@ -3,6 +3,11 @@
 Arena supports Heuristic, Ollama/Qwen and OpenAI/Luna tactical providers.
 Phase 4 integrates model turns; comparative benchmarks remain Phase 5 work.
 
+The original `heuristic` selection remains the frozen `arena-heuristic-v1`
+baseline. An explicit offline `heuristic-v2` option adds positional board
+control without changing research defaults; see [Heuristic V2](arena-heuristic-v2.md)
+for scoring, deterministic comparisons and playtest limitations.
+
 ```text
 ArenaState -> ArenaObservation -> ArenaTurnProvider
                                    |-- Heuristic

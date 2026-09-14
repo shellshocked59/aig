@@ -65,7 +65,7 @@ if (watching) {
       const port = isApi ? apiPort : staticServer.port;
       const proxy = request({
         hostname, port,
-        path: ['/arena', '/arena/', '/empire', '/empire/'].includes(pathname) ? '/' : incoming.url, method: incoming.method,
+        path: ['/arena', '/arena/', '/arena/presentation-lab', '/empire', '/empire/'].includes(pathname) ? '/' : incoming.url, method: incoming.method,
         headers: { ...incoming.headers, host: `${hostname}:${port}` },
       }, (response) => {
         outgoing.writeHead(response.statusCode, { ...response.headers, 'cache-control': 'no-store' });

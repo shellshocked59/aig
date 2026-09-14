@@ -8,12 +8,13 @@ import { chromium } from '../.local/arena-ui-tools/node_modules/playwright/index
 
 const origin = process.argv[2] || 'http://127.0.0.1:5173';
 if (!['localhost', '127.0.0.1'].includes(new URL(origin).hostname)) throw new Error('Local test origin required');
-const output = '.local/arena-ui-phase1';
+const output = process.env.ARENA_EVIDENCE_DIR || '.local/arena-ui-phase3';
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ channel: process.env.ARENA_BROWSER || 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1080 } });
 const errors = [];
 page.on('pageerror', (error) => errors.push(error.message));
+page.on('console', (message) => { if (message.type() === 'error' && message.text().includes('Arena presentation')) errors.push(message.text()); });
 await page.route('**/*', (route) => new URL(route.request().url()).origin === origin
   ? route.continue() : route.abort());
 const tile = (x, y) => `[data-arena="tile"][data-x="${x}"][data-y="${y}"]`;
@@ -73,12 +74,45 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 300));
     await route.fulfill({ response });
   });
+  await page.evaluate(() => {
+    window.turnSamples=[];window.recordTurn=true;
+    const sample=()=>{
+      window.turnSamples.push({t:performance.now(),status:document.querySelector('.arena-playback-status')?.textContent,
+        latest:document.querySelector('.arena-battle-log li')?.textContent,
+        source:document.querySelector('.arena-source')?.textContent,
+        sourcePosition:document.querySelector('.arena-source')?.getBoundingClientRect().toJSON(),
+        targetPosition:document.querySelector('.arena-target')?.getBoundingClientRect().toJSON(),
+        ghost:document.querySelector('.arena-movement-ghost')?.getBoundingClientRect().toJSON(),
+        float:[...document.querySelectorAll('.arena-float')].map(n=>n.textContent),
+        hp:[...document.querySelectorAll('.arena-tile > .arena-entity')].map(n=>({id:n.dataset.unitId||n.dataset.coreId,hp:n.querySelector('meter').value})),
+        locked:document.querySelector('[data-arena="end"]')?.disabled});
+      if(window.recordTurn)requestAnimationFrame(sample);
+    };requestAnimationFrame(sample);
+  });
   const response = page.waitForResponse((r) => r.url().endsWith('/commands'));
   await page.locator('[data-arena="end"]').click();
   assert.match(await page.locator('.arena-view').innerText(), /AI thinking/);
   assert.ok(await page.locator('[data-arena="end"]').isDisabled());
-  await response;
+  const finalResponse = await (await response).json();
+  await page.getByText('AI acting', { exact: false }).first().waitFor();
+  const currentLines = await page.locator('.arena-battle-log li').allTextContents();
+  assert.ok(currentLines.length < finalResponse.battle_log.length, 'AI log streams instead of dumping final batch');
+  await page.screenshot({ path: `${output}/arena-ai-acting.png`, fullPage: true });
+  for(const kind of ['REVIVE','HEAL','ATTACK']) {
+    await page.waitForFunction(kind=>document.querySelector('.arena-source')?.textContent===kind &&
+      !!document.querySelector('.arena-float'),kind,{polling:'raf'});
+    if (kind === 'ATTACK') assert.equal(await page.locator('[data-selected-hp]').innerText(), '5/10 HP');
+    await page.screenshot({path:`${output}/arena-ai-${kind.toLowerCase()}.png`,fullPage:true});
+  }
   await page.locator('[data-arena="end"]:enabled').waitFor();
+  const turnSamples=await page.evaluate(()=>{window.recordTurn=false;return window.turnSamples;});
+  await writeFile(`${output}/heuristic-turn-frames.json`,JSON.stringify({events:finalResponse.presentation.events,samples:turnSamples},null,2));
+  const acting=turnSamples.filter(s=>s.status?.includes('AI acting'));
+  assert.ok(acting.every(s=>s.locked));
+  const actionStarts=[];
+  for(const s of acting)if(s.latest!==actionStarts.at(-1)?.text)actionStarts.push({text:s.latest,t:s.t});
+  console.log('Heuristic playback',JSON.stringify({durationMs:acting.at(-1).t-acting[0].t,actions:actionStarts}));
+  assert.deepEqual((await page.locator('.arena-battle-log li').allTextContents()).reverse(), finalResponse.battle_log.map((e) => e.text));
   assert.match(await page.locator('.arena-status').innerText(), /Blue Team/);
   assert.match(await page.locator('.arena-battle-log').innerText(), /Red Team/);
   await page.screenshot({ path: `${output}/arena-heuristic.png`, fullPage: true });
