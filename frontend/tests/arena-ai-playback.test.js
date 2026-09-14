@@ -39,6 +39,9 @@ for (const [provider, count] of [['heuristic', 5], ['heuristic-v2', 4]]) {
         assert.equal(game.state.active_player_id, event.acting_player);
         assert.equal(game.state.battle_log.length, i + 1);
         assert.equal(root.querySelector('[data-arena="end"]').disabled, true);
+        assert.ok(root.querySelector('.arena-command-deck.arena-passive'));
+        assert.match(root.querySelector('.arena-context').textContent, /Opponent turn/);
+        assert.ok([...root.querySelectorAll('.arena-command-deck [data-mode]')].every(b => b.disabled));
         assert.equal(root.querySelector('.arena-selected [data-unit-id]').dataset.unitId, 'blue-ranger');
         if (event.actor_id) {
           assert.equal(root.querySelector('.arena-acting [data-unit-id]').dataset.unitId, event.actor_id);
@@ -50,6 +53,7 @@ for (const [provider, count] of [['heuristic', 5], ['heuristic-v2', 4]]) {
       assert.equal(visualSignature(game.state), visualSignature(f.final));
       assert.equal(root.querySelector('[data-arena="end"]').disabled, false);
       assert.equal(root.querySelector('.arena-acting'), null);
+      assert.equal(root.querySelector('.arena-command-deck.arena-passive'), null);
     } finally { game.destroy(); dom.window.close(); }
   });
 }

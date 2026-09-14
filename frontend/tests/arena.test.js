@@ -34,6 +34,7 @@ async function setup(t, { state = fixture(), overrides = {} } = {}) {
   const calls = [];
   const api = {
     getGame: async () => structuredClone(state),
+    createDemo: async () => structuredClone(state),
     createAiDemo: async () => structuredClone(state),
     command: async (...args) => { calls.push(args); return structuredClone(state); },
     ...overrides,
@@ -70,19 +71,19 @@ test('ability information works for an unavailable Bash without selecting or exe
   assert.equal(help.getAttribute('aria-expanded'), 'false');
 });
 
-test('Luna is the only match entry and New Match selects OpenAI even from an existing offline match', async (t) => {
+test('three public modes are available and New Match preserves the current provider', async (t) => {
   const state = fixture();
   state.controllers = { blue: 'human', red: 'heuristic-v2_ai' };
   const providers = [];
   const { root, click } = await setup(t, { state, overrides: {
-    createAiDemo: async (provider) => { providers.push(provider); return { ...structuredClone(state), controllers: { blue: 'human', red: 'openai_ai' } }; },
+    createAiDemo: async (provider) => { providers.push(provider); return { ...structuredClone(state), controllers: { blue: 'human', red: `${provider}_ai` } }; },
   } });
-  assert.deepEqual([...root.querySelectorAll('[data-arena^="demo"]')].map(b => b.dataset.arena), ['demo-openai']);
+  assert.deepEqual([...root.querySelectorAll('[data-arena^="demo"]')].map(b => b.dataset.arena), ['demo-ai-v2', 'demo-openai', 'demo-observer']);
   assert.doesNotMatch(root.textContent, /usage charges|External provider required|Experimental AI|Local Qwen|Configured AI/);
   await click('[data-arena="reset"]');
-  assert.match(root.querySelector('.arena-mode').textContent, /OpenAI Luna/);
+  assert.match(root.querySelector('.arena-mode').textContent, /Human vs Heuristic/);
   await click('[data-arena="demo-openai"]');
-  assert.deepEqual(providers, ['openai', 'openai']);
+  assert.deepEqual(providers, ['heuristic-v2', 'openai']);
 });
 
 test('each class exposes only its server-described abilities and AP costs', async (t) => {
@@ -154,7 +155,7 @@ test('Fireball selects empty impact tile, shows friendly-fire guidance and retur
   await click(tile(2, 3));
   assert.deepEqual(received, ['fireball', 'blue', { unit_id: 'blue-mage', target_position: { x: 2, y: 3 } }]);
   assert.match(root.querySelector(tile(1, 3)).getAttribute('aria-label'), /DOWNED/);
-  assert.match(root.querySelector('.arena-details').textContent, /DOWNED/);
+  assert.match(root.querySelector('.arena-selected-summary').textContent, /DOWNED/);
   assert.ok([...root.querySelectorAll('[data-mode]')].every((b) => b.disabled));
   assert.match(root.querySelector('.arena-status').textContent, /3 \/ 5 AP/);
 });
@@ -183,14 +184,14 @@ test('Arena demo creation renders all tiles, classes, Cores, bonuses, HP and act
   const { root, click } = await setup(t, { overrides: {
     getGame: () => { throw new ApiError('no_game', 'Create demo', 404); },
   } });
-  assert.equal(root.querySelector('[data-arena="demo-openai"]').textContent, 'OpenAI Luna');
+  assert.equal(root.querySelector('[data-arena="demo-openai"]').textContent, 'Human vs OpenAI Luna');
   await click('[data-arena="demo-openai"]');
   assert.equal(root.querySelectorAll('.arena-tile').length, 45);
   assert.equal(root.querySelectorAll('.arena-blocked').length, 4);
   assert.equal(root.querySelectorAll('.arena-bonus').length, 6);
   assert.equal(root.querySelectorAll('.arena-tile.arena-team-blue').length, 5);
   assert.equal(root.querySelectorAll('.arena-tile.arena-team-red').length, 5);
-  assert.match(root.textContent, /Blue Team · Turn 0 · 5 \/ 5 AP/);
+  assert.match(root.textContent, /Blue Team turn5 \/ 5 AP/);
   for (const name of ['knight', 'ranger', 'mage', 'cleric', 'core', 'power', 'ward', 'siege']) {
     assert.match(root.textContent, new RegExp(name));
   }
@@ -213,7 +214,7 @@ test('select unit, choose Move, click destination uses server command and return
     command: (...args) => { received = args; return updated; },
   } });
   await click(tile(1, 1));
-  assert.match(root.querySelector('.arena-details').textContent, /knight/);
+  assert.match(root.querySelector('.arena-selected-summary').textContent, /knight/);
   await click(mode('move'));
   assert.equal(root.querySelectorAll('.arena-legal').length, 1);
   await click(tile(2, 1));
@@ -279,7 +280,7 @@ test('End Turn uses explicit actor, restores returned AP and clears selection', 
   await click('[data-arena="end"]');
   assert.deepEqual(calls, [['end_turn', 'blue']]);
   assert.equal(root.querySelector('.arena-selected'), null);
-  assert.match(root.textContent, /Red Team · Turn 0 · 5 \/ 5 AP/);
+  assert.match(root.textContent, /Red Team turn5 \/ 5 AP/);
 });
 
 test('zero AP leaves End Turn enabled while actions are disabled', async (t) => {
@@ -302,7 +303,7 @@ test('illegal targets do not send requests; cancel allows selecting another unit
   assert.match(root.querySelector('[role="alert"]').textContent, /legal target/);
   await click('[data-arena="cancel"]');
   await click(tile(7, 1));
-  assert.match(root.querySelector('.arena-details').textContent, /Red Team/);
+  assert.match(root.querySelector('.arena-selected-summary').textContent, /Red Team/);
   assert.equal(root.querySelector(mode('move')).disabled, true);
 });
 
@@ -418,7 +419,8 @@ test('Arena AI pending turn disables all controls then renders returned human st
   finish({ ...state, turn: 1, units: state.units.map((u) => ({ ...u, hp: u.hp - 1 })) });
   await game.whenIdle();
   assert.doesNotMatch(root.textContent, /AI thinking/);
-  assert.match(root.querySelector('.arena-status').textContent, /Blue Team.*Turn 1/);
+  assert.match(root.querySelector('.arena-status').textContent, /Blue Team/);
+  assert.match(root.querySelector('.arena-mode').textContent, /Turn 1/);
   assert.match(root.querySelector(tile(1, 1)).textContent, /17\/18 HP/);
   assert.equal(root.querySelector('[data-arena="end"]').disabled, false);
 });
@@ -469,7 +471,7 @@ for (const provider of ['ollama', 'openai', 'configured']) {
 }
 
 for (const provider of ['ollama', 'openai']) {
-  test(`Arena ${provider} pending turn disables controls and displays fallback actions safely`, async (t) => {
+  test(`Arena ${provider} pending turn locks controls and retains fallback data without development UI`, async (t) => {
     const state = { ...fixture(), controllers: { blue: 'human', red: `${provider}_ai` } };
     let finish;
     const { root, game } = await setup(t, { state, overrides: {
@@ -483,8 +485,9 @@ for (const provider of ['ollama', 'openai']) {
       actions_attempted: [{ executed: true, action: { type: 'attack', unit_id: 'red-ranger', target_id: '<img src=x>' } }],
     }] });
     await game.whenIdle();
-    assert.match(root.textContent, /Heuristic fallback/);
-    assert.match(root.textContent, /red-ranger attack <img src=x>/);
+    assert.equal(game.state.ai_turns[0].inference.fallback_used, true);
+    assert.equal(game.state.ai_turns[0].actions_attempted[0].action.target_id, '<img src=x>');
+    assert.doesNotMatch(root.textContent, /Heuristic fallback|AI turn details/);
     assert.equal(root.querySelector('img'), null);
     assert.equal(root.querySelector('[data-arena="end"]').disabled, false);
   });
@@ -503,7 +506,7 @@ test('Arena URL opens Arena directly without creating a match or contacting a pr
   assert.equal(root.querySelector('[data-view="arena"]').hidden, false);
   assert.equal(root.querySelectorAll('.arena-tile').length, 45);
   assert.equal(creates, 0);
-  assert.equal(root.querySelector('.arena-experimental'), null);
+  assert.equal(root.querySelector('.arena-experimental').open, false);
 });
 
 test('changing owned selection during Move clears old targets without a command', async (t) => {
@@ -529,7 +532,7 @@ for (const action of ['attack', 'heal', 'revive']) {
   });
 }
 
-test('New Match selects Luna after refreshing an old heuristic match and clears the battle log', async (t) => {
+test('New Match preserves an old heuristic match and clears the battle log', async (t) => {
   const state = { ...fixture(), controllers: { blue: 'human', red: 'heuristic_ai' },
     battle_log: [{ id: 1, text: 'Blue Team Knight moved to (2, 1)' }] };
   let provider = 'not called';
@@ -539,14 +542,14 @@ test('New Match selects Luna after refreshing an old heuristic match and clears 
   assert.match(root.querySelector('.arena-mode').textContent, /You are Blue/);
   assert.match(root.querySelector('.arena-battle-log').textContent, /moved to/);
   await click('[data-arena="reset"]');
-  assert.equal(provider, 'openai');
+  assert.equal(provider, 'heuristic');
   assert.doesNotMatch(root.querySelector('.arena-battle-log').textContent, /moved to/);
 });
 
 test('battle log escapes server text and winner displays reason with a reset', async (t) => {
   const state = { ...fixture(), winner_player_id: 'blue', terminal_reason: 'Core destroyed',
     battle_log: [{ id: 1, text: '<img src=x> attacked' }] };
-  const { root, click } = await setup(t, { state, overrides: { createAiDemo: async () => fixture() } });
+  const { root, click } = await setup(t, { state, overrides: { createDemo: async () => fixture() } });
   assert.equal(root.querySelector('img'), null);
   assert.match(root.querySelector('.arena-winner').textContent, /Core destroyed/);
   await click('[data-arena="reset"]');
@@ -562,4 +565,84 @@ test('session creation failure is visible and can be retried', async (t) => {
   await click('[data-arena="demo-openai"]');
   assert.match(root.querySelector('[role="alert"]').textContent, /Could not create Arena/);
   assert.equal(root.querySelector('[data-arena="demo-openai"]').disabled, false);
+});
+
+test('board-first HUD keeps unit and abilities in a full-width deck, with rules below and a log-only rail', async (t) => {
+  const { root, click } = await setup(t);
+  const deck = root.querySelector('.arena-command-deck');
+  assert.ok(root.querySelector('.arena-board').compareDocumentPosition(deck) & 4);
+  assert.match(deck.textContent, /Select a Blue unit/);
+  assert.ok(root.querySelector('.arena-details .arena-battle-log'));
+  assert.equal(root.querySelector('.arena-details .arena-selected-summary'), null);
+  assert.equal(root.querySelector('.arena-legend'), null);
+  assert.equal(root.querySelectorAll('.arena-details > *').length, 1);
+  assert.equal(root.querySelector('.arena-details details'), null);
+  const rules = root.querySelector('.arena-view > .arena-rules');
+  assert.equal(rules.open, false);
+  assert.ok(deck.compareDocumentPosition(rules) & 4);
+  assert.equal(root.querySelector('[data-arena="coordinates"]'), null);
+  assert.doesNotMatch(root.textContent, /Development info|AI turn details/);
+  for (const [y, kind, hp] of [[1,'knight',18],[0,'ranger',10],[3,'mage',9],[4,'cleric',11]]) {
+    await click(tile(1,y));
+    const summary = root.querySelector('.arena-command-deck .arena-selected-summary');
+    assert.ok(summary.querySelector(`[data-class-art="${kind}"]`));
+    assert.match(summary.textContent, new RegExp(`${hp}/${hp} HP`));
+    assert.match(summary.textContent, /Move.*Damage.*Range/);
+    assert.ok(root.querySelectorAll('.arena-command-deck [data-mode]').length >= 4);
+    assert.equal(root.querySelectorAll('.arena-details [data-mode]').length, 0);
+    assert.ok(root.querySelector('.arena-selected-art[role="img"]').getAttribute('aria-label').includes(kind));
+  }
+});
+
+for (const [action, category, instruction] of [
+  ['move','move',/highlighted destination/], ['attack','hostile',/highlighted enemy/],
+  ['heal','support',/active ally/], ['revive','support',/DOWNED ally/], ['fireball','fire',/impact tile/],
+]) test(`${action} exposes semantic targeting and context without changing legal targets`, async (t) => {
+  const state = fixture(), unit = state.units[action === 'fireball' ? 2 : 3];
+  unit.actions[action] = ['move','fireball'].includes(action) ? [{x:2,y:2}] : [action === 'attack' ? 'red-knight' : 'blue-knight'];
+  const { root, click } = await setup(t, { state });
+  await click(tile(unit.x,unit.y)); await click(mode(action));
+  assert.equal(root.querySelectorAll(`.arena-legal.arena-target-${category}`).length,1);
+  assert.match(root.querySelector('.arena-context').textContent,instruction);
+  assert.match(root.querySelector('.arena-context h2').textContent,/AP/);
+  await click('[data-arena="cancel"]');
+  assert.equal(root.querySelectorAll('.arena-legal').length,0);
+  assert.equal(root.querySelector('[data-arena="cancel"]'),null);
+});
+
+test('observer mode creates both AI seats without advancing and steps only on request', async (t) => {
+  const observer = {...fixture(), controllers:{blue:'openai_ai',red:'openai_ai'}};
+  let creates=0, turns=0, finish;
+  const {root,game,click} = await setup(t,{overrides:{
+    createObserverDemo:async()=>{creates++;return structuredClone(observer);},
+    observerTurn:()=>{turns++;return new Promise(resolve=>{finish=resolve;});},
+  }});
+  await click('[data-arena="demo-observer"]');
+  assert.equal(creates,1);assert.equal(turns,0);
+  assert.match(root.querySelector('.arena-mode').textContent,/Observer mode/);
+  assert.equal(root.querySelector('[data-arena="end"]'),null);
+  assert.ok([...root.querySelectorAll('.arena-tile')].every(b=>b.disabled));
+  root.querySelector('[data-arena="observer-turn"]').click();
+  assert.equal(turns,1);assert.equal(root.querySelector('[data-arena="observer-turn"]').disabled,true);
+  finish({...observer,active_player_id:'red'});await game.whenIdle();
+  assert.equal(root.querySelector('[data-arena="observer-turn"]').disabled,false);
+  assert.equal(turns,1);
+  await click('[data-arena="reset"]');assert.equal(creates,2);
+});
+
+test('ability selection and Cancel retain keyboard focus in the deck', async (t) => {
+  const { root, click, dom } = await setup(t);
+  await click(tile(1,1));
+  assert.equal(dom.window.document.activeElement,root.querySelector(tile(1,1)));
+  await click(mode('move'));
+  assert.equal(dom.window.document.activeElement,root.querySelector(mode('move')));
+  await click('[data-arena="cancel"]');
+  assert.equal(dom.window.document.activeElement,root.querySelector(mode('move')));
+});
+
+test('missing observer route gives a restart instruction instead of a generic failure', async () => {
+  const api=createArenaApi(async()=>({ok:false,status:404,json:async()=>({detail:'Not Found'})}));
+  for(const request of [()=>api.createObserverDemo(),()=>api.observerTurn()]) {
+    await assert.rejects(request,error=>error.code==='observer_unavailable' && /docker compose restart api/.test(error.message) && /restart npm run dev/.test(error.message));
+  }
 });

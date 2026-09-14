@@ -17,10 +17,17 @@ export function createArenaApi(fetcher = browserFetch, baseUrl = configuredApiBa
     try { body = await response.json(); } catch {
       throw new ApiError('invalid_response', 'Arena returned an unreadable response.', response.status);
     }
-    if (!response.ok) throw new ApiError(body.error, body.message || 'Arena request failed.', response.status);
+    if (!response.ok) {
+      if (response.status === 404 && path.startsWith('/observer/')) {
+        throw new ApiError('observer_unavailable', `Observer mode is not loaded at ${baseUrl || 'this site'}. Restart that backend (Docker: docker compose restart api; local dev: restart npm run dev), then refresh Arena.`, response.status);
+      }
+      throw new ApiError(body.error, body.message || (typeof body.detail === 'string' ? body.detail : null) || 'Arena request failed.', response.status);
+    }
     return body;
   }
   return {
+    createObserverDemo: () => request('/observer/demo'),
+    observerTurn: () => request('/observer/turn'),
     getGame: () => request('', undefined, 'GET'),
     createDemo: () => request('/demo'),
     createAiDemo: (provider) => request(provider ? `/demo-ai/${encodeURIComponent(provider)}` : '/demo-ai'),

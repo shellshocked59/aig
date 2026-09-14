@@ -1,4 +1,4 @@
-import { abilityHelp, rulesHelp } from './arena-help.js';
+import { actionName, abilityHelp, rulesHelp } from './arena-help.js';
 import { escapeHtml as esc } from './presentation.js';
 import { renderArenaPiece, unitVisual } from './arena-unit-visuals.js';
 import { actionIcon } from './arena-action-icons.js';
@@ -28,14 +28,14 @@ export function mountArena(root, api, options = {}) {
       (options.report || console.error)(...args);
     } });
   let selectedId = null;
-  let coordinates = options.coordinates ?? false;
+  const coordinates = options.coordinates ?? false;
   let mode = null;
   let busy = false;
   let aiPending = false;
   let error = '';
   let pending = Promise.resolve();
   const selected = () => state?.units.find((u) => u.id === selectedId);
-  const playerName = (id) => state?.players.find((p) => p.id === id)?.name || id;
+  const playerName = (id) => state?.players.find((p) => p.id === id)?.name || id || 'Team';
   const disabled = (condition = false) => busy || condition ? 'disabled' : '';
   const at = (piece, tile) => piece.x === tile.x && piece.y === tile.y;
 
@@ -44,24 +44,32 @@ export function mountArena(root, api, options = {}) {
     const unit = selected();
     const terminal = state?.winner_player_id != null;
     const controllers = Object.values(state?.controllers || {});
+    const observer = controllers.length > 0 && controllers.every(c => c !== 'human');
     const offlineAi = controllers.some((c) => ['heuristic_ai', 'heuristic-v2_ai'].includes(c));
     const hasAi = controllers.some((c) => c !== 'human');
-    const matchLabel = hasAi ? (offlineAi ? (controllers.includes('heuristic-v2_ai') ? 'Human vs Heuristic V2 \u00b7 You are Blue' : 'Human vs Heuristic \u00b7 You are Blue') : controllers.includes('openai_ai') ? 'OpenAI Luna \u00b7 You are Blue' : 'AI match \u00b7 You are Blue') : 'Local Match \u00b7 Control both teams';
+    const matchLabel = observer ? 'OpenAI Luna vs OpenAI Luna · Observer mode' : hasAi ? (offlineAi ? 'Human vs Heuristic · You are Blue' : 'Human vs OpenAI Luna · You are Blue') : 'Existing local match';
     const cannotAct = terminal || (state?.controllers?.[state.active_player_id] && state.controllers[state.active_player_id] !== 'human');
+    const passive = aiPending || cannotAct;
+    const targetKind = mode === 'move' ? 'move' : ['heal', 'revive'].includes(mode) ? 'support' : mode === 'fireball' ? 'fire' : 'hostile';
+    const instruction = { move: 'Choose a highlighted destination.', fireball: 'Choose an impact tile. Nearby allies can be hit.', heal: 'Choose a highlighted active ally.', revive: 'Choose a DOWNED ally.' }[mode] || 'Choose a highlighted enemy.';
     root.innerHTML = `<section class="arena-view" aria-label="Arena">
-      <header class="arena-header"><div><p class="arena-eyebrow">Agent Strategy / Arena</p><h1>Arena</h1>
-      <p>Break their Core. Protect your team.</p></div>
-      <div class="arena-match-controls">
-      <button data-arena="demo-openai" ${disabled()}>OpenAI Luna</button>
+      <header class="arena-header"><div><h1>Arena</h1><p>Break their Core. Protect your team.</p></div>
+      <div class="arena-match-controls"><span class="arena-mode-label">Play mode</span>
+      <details class="arena-experimental"><summary>${state ? esc(matchLabel.split(' · ')[0]) : 'Choose mode'}</summary><div>
+      <button data-arena="demo-ai-v2" ${disabled()}>Human vs Heuristic</button>
+      <button data-arena="demo-openai" ${disabled()}>Human vs OpenAI Luna</button>
+      <button data-arena="demo-observer" ${disabled()}>OpenAI Luna vs OpenAI Luna</button></div></details>
       ${state ? `<button data-arena="reset" ${busy && !playing ? 'disabled' : ''}>New Match</button>` : ''}
       <button data-arena="refresh" ${busy && !playing ? 'disabled' : ''}>Refresh</button></div></header>
       ${error ? `<p role="alert">${esc(error)}</p>` : ''}
-      <p class="arena-playback-status" role="status">${busy ? (playing ? (actionGroup ? `AI acting · Action ${actionGroup.index} / ${actionGroup.total} · ${esc(actionGroup.events[0].actor_label)} · ${esc(actionGroup.events[0].type.replaceAll('_', ' '))}` : aiPending ? 'AI acting\u2026' : 'Playing action\u2026') : aiPending ? 'AI thinking\u2026' : 'Resolving\u2026') : '&nbsp;'}</p>
-      ${state ? `<div class="arena-turnbar"><div><p class="arena-mode">${esc(matchLabel)}</p><p class="arena-status" role="status">${terminal
+      ${state ? `<div class="arena-turnbar arena-team-${(state.winner_player_id ?? state.active_player_id) === state.players[0].id ? 'blue' : 'red'}"><div>
+      <p class="arena-status" role="status">${terminal
         ? `${esc(playerName(state.winner_player_id))} wins!`
-        : `${esc(playerName(state.active_player_id))} · Turn ${state.turn} · ${state.action_points_remaining} / 5 AP`}</p>
-      ${terminal ? `<p class="arena-winner">${esc(state.terminal_reason || 'Battle complete')}</p>` : `<p>${aiPending ? 'AI is taking its turn. Controls will return shortly.' : hasAi && cannotAct ? 'AI controls this turn. Refresh to check the state.' : 'Select a unit → choose an action → click a highlighted tile.'}</p>`}</div>
-      <button class="arena-end" data-arena="end" ${disabled(cannotAct)}>End Turn</button></div>
+        : `<span>${esc(playerName(state.active_player_id))} turn</span><span class="arena-ap">${state.action_points_remaining} / 5 <small>AP</small></span>`}</p>
+      <p class="arena-mode">${esc(matchLabel)} · Turn ${state.turn}</p>
+      ${terminal ? `<p class="arena-winner">${esc(state.terminal_reason || 'Battle complete')}</p>` : ''}</div>
+      <p class="arena-playback-status" role="status">${busy ? (playing ? (actionGroup ? `AI acting · Action ${actionGroup.index} / ${actionGroup.total}<span>${esc(actionGroup.events[0].actor_label)} · ${esc(actionName(actionGroup.events[0].type))}</span>` : aiPending ? 'AI acting…' : 'Playing action…') : aiPending ? 'AI thinking…' : 'Resolving…') : terminal ? 'Battle complete' : 'Ready'}</p>
+      ${observer ? `<button class="arena-end" data-arena="observer-turn" ${disabled(terminal)}>Next AI turn</button>` : `<button class="arena-end" data-arena="end" ${disabled(cannotAct)}>End Turn</button>`}</div>
       <div class="arena-layout"><div class="arena-scroll"><div class="arena-board ${coordinates ? 'arena-show-coordinates' : ''}" aria-label="Arena board"><div class="arena-overlay" aria-hidden="true"></div>
       ${state.board.tiles.map((tile) => {
         const piece = state.units.find((u) => at(u, tile)) || state.cores.find((c) => at(c, tile));
@@ -69,29 +77,30 @@ export function mountArena(root, api, options = {}) {
         const legal = mode && unit && ((mode === 'move' || mode === 'fireball')
           ? unit.actions[mode].some((p) => at(p, tile)) : piece && unit.actions[mode].includes(piece.id));
         const description = `${tile.x}, ${tile.y}: ${tile.terrain}${tile.bonus ? `, ${tile.bonus}` : ''}${piece ? `, ${playerName(piece.owner_id)} ${kind}, HP ${piece.hp}/${piece.max_hp}${piece.status === 'downed' ? ', DOWNED' : ''}` : ''}`;
-        return `<button class="arena-tile arena-${tile.terrain} ${tile.bonus ? `arena-${tile.bonus}` : ''} ${piece ? `arena-team-${piece.owner_id === state.players[0].id ? 'blue' : 'red'}` : ''} ${piece?.status === 'downed' ? 'arena-downed' : ''} ${piece && !piece.unit_type && piece.hp === 0 ? 'arena-core-destroyed' : ''} ${piece?.id === selectedId ? 'arena-selected' : ''} ${actionGroup?.actorId === piece?.id && piece ? 'arena-acting' : ''} ${legal ? 'arena-legal' : ''}"
+        return `<button class="arena-tile arena-${tile.terrain} ${tile.bonus ? `arena-${tile.bonus}` : ''} ${piece ? `arena-team-${piece.owner_id === state.players[0].id ? 'blue' : 'red'}` : ''} ${piece?.status === 'downed' ? 'arena-downed' : ''} ${piece && !piece.unit_type && piece.hp === 0 ? 'arena-core-destroyed' : ''} ${piece?.id === selectedId ? 'arena-selected' : ''} ${actionGroup?.actorId === piece?.id && piece ? 'arena-acting' : ''} ${legal ? `arena-legal arena-target-${targetKind}` : ''}"
           data-arena="tile" data-x="${tile.x}" data-y="${tile.y}" aria-pressed="${piece?.id === selectedId}" aria-label="${esc(description + (legal ? ', legal ' + mode + ' target' : ''))}" title="${esc(description + (legal ? ', legal ' + mode + ' target' : ''))}" ${disabled(cannotAct)}>
           <span class="arena-coordinate">${tile.x},${tile.y}</span>
           ${tile.bonus ? `<span class="arena-bonus">${arenaIcon(tile.bonus)}${esc(tile.bonus)}</span>` : ''}
           ${piece ? renderArenaPiece(piece, state.players[0].id) : kind ? arenaIcon(kind) : ''}
         </button>`;
       }).join('')}</div></div>
-      <aside class="arena-details"><section class="arena-panel"><h2>Selected unit</h2>${unit
-        ? `<div class="arena-selected-art arena-team-${unit.owner_id === state.players[0].id ? 'blue' : 'red'} ${unit.status === 'downed' ? 'arena-downed' : ''}">${unitVisual(unit.unit_type)}</div><p>${esc(playerName(unit.owner_id))} · <strong>${esc(unit.unit_type)}</strong><br><span data-selected-hp="${esc(unit.id)}">${unit.hp}/${unit.max_hp} HP</span> | <span data-selected-status="${esc(unit.id)}">${esc(unit.status.toUpperCase())}</span></p>
-           <p>Move ${unit.stats.move_range} · Attack ${unit.stats.damage} / range ${unit.stats.attack_range}${unit.stats.heal_amount ? `<br>Heal ${unit.stats.heal_amount} / range ${unit.stats.heal_range}` : ''}</p>
-           <div class="arena-actions">${Object.keys(unit.abilities).map((action) => `<div class="arena-action-option"><button data-arena="mode" data-mode="${action}" aria-pressed="${mode === action}" ${disabled(cannotAct || unit.owner_id !== state.active_player_id || unit.status !== 'active' || !unit.actions[action].length)}>${actionIcon(action)}<span>${action.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())} <small>(${unit.abilities[action].ap_cost} AP)</small></span></button>${abilityHelp(action, busy)}</div>`).join('')}
-           <button data-arena="cancel" ${disabled()}>Cancel action</button></div>
-           <p>${mode ? `Choose a highlighted ${(mode === 'move' || mode === 'fireball') ? 'destination' : 'target'} for ${mode}.` : 'Choose an action.'}</p>`
-        : '<p>Select an active-team unit to act. Select any unit to inspect it.</p>'}
-        </section><section class="arena-panel arena-legend"><h2>Board guide</h2>
-        <p><b>POWER</b> +2 attack damage</p><p><b>WARD</b> −2 incoming unit damage (min 1)</p><p><b>SIEGE</b> +4 Core damage</p><p><b>Ruins</b> Impassable · block line of sight</p>
-        <p><b>White outline</b> Selected unit<br><b>Gold outline</b> Legal target</p></section>
-        <section class="arena-panel"><h2>Battle log</h2><ol class="arena-battle-log" aria-label="Battle log" aria-live="polite">${(state.battle_log || []).slice().reverse().map((entry) => `<li>${esc(entry.text)}</li>`).join('') || '<li>No actions yet. Blue moves first.</li>'}</ol></section>
-        ${rulesHelp()}<details class="arena-panel"><summary>Development info</summary><label><input type="checkbox" data-arena="coordinates" ${coordinates ? 'checked' : ''}> Show coordinates</label><a href="/arena/presentation-lab">Presentation lab</a><p>${esc(state.rules_version || '')}<br>${esc(state.scenario_version || '')}<br>Selected: ${esc(selectedId || 'none')}</p></details>
-        ${(state?.ai_turns || []).map((t) => `<details class="arena-panel arena-ai-summary"><summary>AI turn details · ${t.ap_spent} AP</summary><strong>${esc(t.inference?.actual_provider || t.provider_type)}</strong>
-        ${t.inference?.fallback_used ? `<p>Heuristic fallback from ${esc(t.inference.requested_provider)} (${esc(t.inference.error_category)})</p>` : ''}
-        <ul>${t.actions_attempted.map((a) => `<li>${esc(a.action.unit_id)} ${esc(a.action.type)} ${esc(a.action.target_id || JSON.stringify(a.action.destination || a.action.target_position))}${a.executed ? '' : ' (invalid; turn truncated)'}</li>`).join('')}</ul></details>`).join('')}
-      </aside></div>` : '<div class="arena-welcome arena-panel"><h2>Your first skirmish</h2><p>Choose <strong>OpenAI Luna</strong> to play Blue against Luna.</p><p>Each team has four units, a Core, and 5 AP per turn. Select a unit, choose an action, then click a gold target.</p></div>'}
+      <aside class="arena-details" aria-label="Battle information">
+        <section class="arena-panel arena-log-panel"><h2>Battle log</h2><ol class="arena-battle-log" aria-label="Battle log" aria-live="polite">${(state.battle_log || []).slice().reverse().map((entry) => `<li>${esc(entry.text)}</li>`).join('') || '<li>No actions yet. Blue moves first.</li>'}</ol></section>
+      </aside>
+      <section class="arena-command-deck ${passive ? 'arena-passive' : ''}" aria-label="Command deck" aria-busy="${busy}">
+        <div class="arena-selected-summary" aria-label="Selected unit">${unit
+          ? `<div role="img" aria-label="${esc(playerName(unit.owner_id))} ${esc(unit.unit_type)} artwork" class="arena-selected-art arena-team-${unit.owner_id === state.players[0].id ? 'blue' : 'red'} ${unit.status === 'downed' ? 'arena-downed' : ''}">${unitVisual(unit.unit_type)}</div>
+            <div><p class="arena-unit-team">${esc(playerName(unit.owner_id))} · <span data-selected-status="${esc(unit.id)}">${esc(unit.status.toUpperCase())}</span></p>
+            <h2>${esc(unit.unit_type)}</h2><p class="arena-unit-hp" data-selected-hp="${esc(unit.id)}">${unit.hp}/${unit.max_hp} HP</p>
+            <p class="arena-unit-stats"><span>Move ${unit.stats.move_range}</span> · <span>Damage ${unit.stats.damage}</span> · <span>Range ${unit.stats.attack_range}</span>${unit.stats.heal_amount ? `<br>Heal ${unit.stats.heal_amount} · Range ${unit.stats.heal_range}` : ''}</p></div>`
+          : `<div class="arena-empty-art">${arenaIcon('knight')}</div><div><h2>${terminal ? 'Battle complete' : observer ? 'Observer mode' : passive ? 'Opponent turn' : 'Select a ' + esc(playerName(state.active_player_id).replace(' Team', '')) + ' unit'}</h2><p>${terminal ? 'Start a new match when ready.' : observer ? 'Watch Blue and Red take turns.' : passive ? 'Watch the opposing team act.' : 'Inspect a unit, then choose an ability.'}</p></div>`}</div>
+        <div class="arena-ability-tray" aria-label="Abilities">${unit ? `<div class="arena-actions">${Object.keys(unit.abilities).map((action) => `<div class="arena-action-option arena-ability-${action}"><button data-arena="mode" data-mode="${action}" aria-pressed="${mode === action}" ${disabled(cannotAct || unit.owner_id !== state.active_player_id || unit.status !== 'active' || !unit.actions[action].length)}>${actionIcon(action)}<span>${esc(actionName(action))}<small>${unit.abilities[action].ap_cost} AP</small></span></button>${abilityHelp(action, busy)}</div>`).join('')}</div>` : observer && !terminal ? '<p class="arena-tray-empty">AI vs AI<span>Luna controls both teams.</span></p>' : terminal ? '<p class="arena-tray-empty">Battle complete<span>New Match keeps your current play mode.</span></p>' : '<p class="arena-tray-empty">Move · Attack · Class ability · Finish<span>Every turn gives your team 5 AP.</span></p>'}</div>
+        <div class="arena-context arena-target-${targetKind}" aria-label="Action context" role="status">
+          <h2>${terminal ? 'Victory' : observer ? 'Observer mode' : passive ? 'Opponent turn' : busy ? 'Resolving action' : mode ? `${esc(actionName(mode))} · ${unit.abilities[mode].ap_cost} AP` : 'Your command'}</h2>
+          <p>${terminal ? 'Start a new match to play again.' : observer ? busy ? 'Watching the current AI turn.' : 'Choose Next AI turn to watch Luna play.' : passive ? 'Controls return after playback.' : busy ? 'Wait for the action to finish.' : mode ? instruction : unit ? unit.status === 'downed' ? 'This unit is DOWNED.' : unit.owner_id !== state.active_player_id ? 'Inspecting the opposing team.' : 'Choose an action, then a highlighted tile.' : 'Select an active-team unit to act. Select any unit to inspect it.'}</p>
+          ${mode ? `<button data-arena="cancel" ${disabled()}>Cancel action</button>` : ''}
+        </div>
+      </section></div>${rulesHelp()}` : '<div class="arena-welcome arena-panel"><h2>Your first skirmish</h2><p>Choose a mode to play or watch an AI match. Each team has four units, a Core, and 5 AP per turn.</p><p>Select a unit, choose an action, then click a highlighted tile. Observer mode advances one AI turn at a time.</p></div>'}
     </section>`;
   }
 
@@ -142,13 +151,20 @@ export function mountArena(root, api, options = {}) {
       button.parentElement.toggleAttribute('data-help-dismissed', expanded);
       return;
     }
-    if (action === 'coordinates') { coordinates = button.checked; render(); return; }
-    if (action === 'reset' || action === 'demo-openai') return run(() => api.createAiDemo('openai'), true);
+    if (action === 'demo-ai-v2') return run(() => api.createAiDemo('heuristic-v2'), true);
+    if (action === 'demo-openai') return run(() => api.createAiDemo('openai'), true);
+    if (action === 'demo-observer') return run(() => api.createObserverDemo(), true);
+    if (action === 'observer-turn') return run(() => api.observerTurn(), false, true);
+    if (action === 'reset') {
+      if (Object.values(state?.controllers || {}).length && Object.values(state.controllers).every(c => c !== 'human')) return run(() => api.createObserverDemo(), true);
+      const controller = Object.values(state?.controllers || {}).find(c => c !== 'human');
+      return run(() => controller ? api.createAiDemo(controller.replace(/_ai$/, '')) : api.createDemo(), true);
+    }
     if (action === 'refresh') return run(() => api.getGame(), true);
     if (action === 'end') return run(() => api.command('end_turn', state.active_player_id), false,
       Object.values(state.controllers || {}).some((c) => c !== 'human'));
-    if (action === 'cancel') { mode = null; render(); return; }
-    if (action === 'mode') { mode = button.dataset.mode; render(); return; }
+    if (action === 'cancel') { const previousMode = mode; mode = null; render(); root.querySelector(`[data-mode="${previousMode}"]`)?.focus({ preventScroll: true }); return; }
+    if (action === 'mode') { mode = button.dataset.mode; render(); root.querySelector(`[data-mode="${mode}"]`)?.focus({ preventScroll: true }); return; }
     if (action !== 'tile' || !state || state.winner_player_id) return;
     const position = { x: Number(button.dataset.x), y: Number(button.dataset.y) };
     const piece = state.units.find((u) => at(u, position)) || state.cores.find((c) => at(c, position));
@@ -170,6 +186,7 @@ export function mountArena(root, api, options = {}) {
     selectedId = piece?.unit_type ? piece.id : null;
     error = '';
     render();
+    root.querySelector(`[data-arena="tile"][data-x="${position.x}"][data-y="${position.y}"]`)?.focus({ preventScroll: true });
   }
 
   function onHelpKey(event) {

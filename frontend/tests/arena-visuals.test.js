@@ -31,7 +31,7 @@ for (const name of ['move','attack','heal','finish','revive','shield_bash','snip
   assert.match(actionIcon(name),new RegExp(`data-action-icon="${name}"`));
   assert.match(actionIcon(name),/aria-hidden="true"/);
 });
-test('selection reuses artwork, action labels/AP and disabled legality remain authoritative; debug toggle persists',async()=>{
+test('selection reuses artwork, action labels/AP and disabled legality remain authoritative; coordinates stay hidden without development controls',async()=>{
   const dom=new JSDOM('<main></main>'),root=dom.window.document.querySelector('main');
   const game=mountArena(root,{getGame:async()=>structuredClone(fixtures.Attack.start)});
   try {
@@ -44,8 +44,8 @@ test('selection reuses artwork, action labels/AP and disabled legality remain au
       assert.ok(b.textContent.includes(`${cost} AP`));assert.equal(b.disabled,true);
     }
     assert.equal(root.querySelector('.arena-show-coordinates'),null);
-    root.querySelector('[data-arena="coordinates"]').click();assert.ok(root.querySelector('.arena-show-coordinates'));
-    root.querySelector('[data-unit-id="blue-mage"]').closest('button').click();assert.ok(root.querySelector('.arena-show-coordinates'));
+    assert.equal(root.querySelector('[data-arena="coordinates"]'),null);
+    root.querySelector('[data-unit-id="blue-mage"]').closest('button').click();assert.equal(root.querySelector('.arena-show-coordinates'),null);
   } finally {game.destroy();dom.window.close();}
 });
 const cases=[['Knight Attack','arena-physical'],['Ranger Attack','arena-precision'],['Mage Attack','arena-arcane'],['Cleric Attack','arena-radiant'],['Snipe','arena-precision'],['Shield Bash','arena-bash'],['Heal','arena-restorative'],['Revive','arena-revive'],['Fireball','arena-fire']];

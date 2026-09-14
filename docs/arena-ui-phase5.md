@@ -175,3 +175,7 @@ Added: this document, `frontend/src/js/arena-ai-playback-fixtures.json`,
 `scripts/arena-ai-playback-fixtures.py`, and
 `scripts/arena-ai-playback-check.mjs`. Runtime evidence is under
 `artifacts/arena-phase5/`.
+
+## Later Chromium review
+
+[Phase 6](arena-ui-phase6.md) subsequently verified the shared presentation engine in real Chromium, including sequential offline AI playback, temporal lab effects, overlay geometry, cancellation, reduced motion and instant mode. Its evidence is under `artifacts/arena-ui-phase6/`. The earlier browser limitation above describes the Phase 5 run, not the current verification status.

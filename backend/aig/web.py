@@ -4,6 +4,10 @@ Run ``python -m aig.web`` after ``npm run build``, or use ``npm run dev``.
 """
 from pathlib import Path
 
+from fastapi import APIRouter
+from aig.application import ApplicationError
+from aig.arena.ai.controller import ArenaControllerType
+
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -35,6 +39,29 @@ class ArenaWebSession(ArenaGameplaySession):
                 final_state_hash=state_hash(simulation.state), events=simulation.presentation_events[offset:])
             return result
 
+    def observer_demo(self):
+        """Create a two-sided Luna match without requesting a turn."""
+        with self._lock:
+            self.demo(versus_ai=True, provider="openai")
+            self._controllers = {p.id: ArenaControllerType.OPENAI_AI for p in self._simulation.state.players}
+            return self._public_state()
+
+    def observer_turn(self):
+        """Explicitly advance one AI turn with normal presentation events."""
+        with self._lock:
+            simulation = self._require_game()
+            if not all(self._controllers.get(p.id) is ArenaControllerType.OPENAI_AI for p in simulation.state.players):
+                raise ApplicationError("invalid_command", "Start an observer match first.")
+            if simulation.state.winner_player_id is not None:
+                raise ApplicationError("invalid_command", "This match is complete.")
+            start = state_hash(simulation.state)
+            offset = len(simulation.presentation_events)
+            self._ai_traces = (self._ai_controller.run_turn(simulation),)
+            result = self._public_state()
+            result["presentation"] = dict(version=VERSION, start_state_hash=start,
+                final_state_hash=state_hash(simulation.state), events=simulation.presentation_events[offset:])
+            return result
+
     def _public_state(self):
         result = super()._public_state()
         events = getattr(self._simulation, "presentation_events", [])
@@ -53,6 +80,10 @@ def create_app():
                             if not (getattr(route, "path", "").startswith("/api/arena")
                                     or getattr(getattr(route, "original_router", None), "prefix", "") == "/api/arena")]
     app.state.arena_session = ArenaWebSession(app.state.settings)
+    observer = APIRouter(prefix="/api/arena/observer")
+    observer.add_api_route("/demo", app.state.arena_session.observer_demo, methods=["POST"])
+    observer.add_api_route("/turn", app.state.arena_session.observer_turn, methods=["POST"])
+    app.include_router(observer)
     app.include_router(offline_gameplay_router(app.state.arena_session))
     app.include_router(arena_router(app.state.arena_session))
     dist = Path(__file__).resolve().parents[2] / "dist"
